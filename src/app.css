@@ -1,0 +1,128 @@
+/* ─── Reset & Base ─────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Remove blue focus outlines and tap highlights */
+* { outline: none; -webkit-tap-highlight-color: transparent; }
+button { outline: none; user-select: none; }
+div, span, header, nav, aside, main { user-select: none; }
+/* Allow text selection only where it makes sense */
+input, textarea, [contenteditable] { user-select: text; outline: none; }
+::selection { background: rgba(99,102,241,0.3); color: inherit; }
+
+:root {
+  --bg-base:       #0f0f13;
+  --bg-surface:    #17171e;
+  --bg-overlay:    #1e1e28;
+  --bg-hover:      #252533;
+  --bg-active:     #2d2d3d;
+
+  --border:        #2a2a3a;
+  --border-focus:  #5b5bde;
+
+  --text-primary:  #e8e8f0;
+  --text-secondary:#9090a8;
+  --text-muted:    #5c5c72;
+
+  --accent:        #6366f1;
+  --accent-hover:  #7c7ff5;
+  --accent-dim:    rgba(99,102,241,0.15);
+
+  --green:         #22c55e;
+  --red:           #ef4444;
+  --yellow:        #f59e0b;
+
+  --radius-sm:     6px;
+  --radius-md:     10px;
+  --radius-lg:     16px;
+
+  --font-sans:     'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:     'JetBrains Mono', 'Fira Code', monospace;
+
+  --sidebar-w:     240px;
+  --transition:    0.15s ease;
+}
+
+/* ─── Light mode overrides ─────────────────────────────── */
+html.light {
+  --bg-base:       #f0f0f5;
+  --bg-surface:    #ffffff;
+  --bg-overlay:    #e8e8f2;
+  --bg-hover:      #e0e0ec;
+  --bg-active:     #d8d8e8;
+
+  --border:        #ccccd8;
+  --border-focus:  #6366f1;
+
+  --text-primary:  #1a1a2e;
+  --text-secondary:#4a4a6a;
+  --text-muted:    #8888a8;
+
+  --accent:        #6366f1;
+  --accent-hover:  #4f52d4;
+  --accent-dim:    rgba(99,102,241,0.12);
+}
+
+html, body, #app {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+input, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-primary);
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+input:focus, textarea:focus {
+  border-color: var(--border-focus);
+}
+
+a { color: var(--accent); text-decoration: none; }
+
+/* ─── Utility ──────────────────────────────────────────── */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.gap-1 { gap: 4px; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.truncate { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* ─── Markdown rendered content ────────────────────────── */
+.md-content h1 { font-size: 1.6em; font-weight: 700; margin: .75em 0 .4em; }
+.md-content h2 { font-size: 1.3em; font-weight: 600; margin: .75em 0 .4em; }
+.md-content h3 { font-size: 1.1em; font-weight: 600; margin: .5em 0 .3em; }
+.md-content p { margin: .4em 0; }
+.md-content ul, .md-content ol { padding-left: 1.4em; margin: .4em 0; }
+.md-content code { font-family: var(--font-mono); background: var(--bg-active); padding: 2px 6px; border-radius: 4px; font-size: .9em; }
+.md-content pre { background: var(--bg-active); padding: 12px; border-radius: var(--radius-sm); overflow-x: auto; margin: .6em 0; }
+.md-content pre code { background: none; padding: 0; }
+.md-content blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--text-secondary); }
+.md-content a { color: var(--accent); }
+.md-content hr { border: none; border-top: 1px solid var(--border); margin: .8em 0; }
