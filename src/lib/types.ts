@@ -55,7 +55,7 @@ export interface LinkContent {
   og_image?: string;
   og_site?: string;
 }
-export interface FileContent   { stored_path: string; name: string; file_type: "image" | "pdf" | "video" | "word" | "excel" | "powerpoint" | "other"; size: number; word_html?: string; }
+export interface FileContent   { stored_path: string; name: string; file_type: "image" | "pdf" | "video" | "audio" | "word" | "excel" | "powerpoint" | "other"; size: number; word_html?: string; }
 export interface TaskItem      { id: string; title: string; completed: boolean; }
 export interface TaskContent   { tasks: TaskItem[]; }
 export interface CalendarContent { note?: string; }
@@ -67,6 +67,38 @@ export interface StrokePath {
   color: string;
   width: number;
   points: [number, number][];
+  layer?: "base" | "top"; // "base" = lápiz (detrás de bloques), "top" = marcador (encima de todo)
+}
+
+// ─── Notes ───────────────────────────────────────────────
+export interface Note {
+  id: string;
+  space_id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ─── Tasks ───────────────────────────────────────────────
+export interface Task {
+  id: string;
+  space_id: string;
+  title: string;
+  completed: boolean;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// ─── Links ───────────────────────────────────────────────
+export interface Link {
+  id: string;
+  space_id: string;
+  title: string;
+  url: string;
+  link_type: string;
+  created_at: string;
 }
 
 // ─── App file (for import) ───────────────────────────────

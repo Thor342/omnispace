@@ -4,6 +4,8 @@ use chrono::Utc;
 use tauri::State;
 use uuid::Uuid;
 
+const MAX_CONTENT_LEN: usize = 10 * 1024 * 1024; // 10 MB
+
 #[tauri::command]
 pub async fn get_blocks(page_id: String, state: State<'_, AppState>) -> Result<Vec<Block>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -92,6 +94,7 @@ pub async fn update_block_content(
     content: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    if content.len() > MAX_CONTENT_LEN { return Err("Contenido demasiado grande".to_string()); }
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     db.execute(

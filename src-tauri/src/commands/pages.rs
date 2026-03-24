@@ -1,9 +1,13 @@
 use crate::models::{Page, Block};
 use crate::AppState;
 use chrono::Utc;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use tauri::State;
 use uuid::Uuid;
+
+const MAX_TITLE_LEN: usize = 200;
+const MAX_CONTENT_LEN: usize = 10 * 1024 * 1024; // 10 MB
 
 #[tauri::command]
 pub async fn get_pages(space_id: String, state: State<'_, AppState>) -> Result<Vec<Page>, String> {
@@ -36,6 +40,7 @@ pub async fn create_page(
     title: String,
     state: State<'_, AppState>,
 ) -> Result<Page, String> {
+    if title.len() > MAX_TITLE_LEN { return Err("Título demasiado largo".to_string()); }
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     let id = Uuid::new_v4().to_string();
@@ -82,6 +87,7 @@ pub async fn update_page_title(
     title: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    if title.len() > MAX_TITLE_LEN { return Err("Título demasiado largo".to_string()); }
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     db.execute(
@@ -100,11 +106,11 @@ pub async fn delete_page(id: String, state: State<'_, AppState>) -> Result<(), S
     Ok(())
 }
 
-// ── Export page as a folder ────────────────────────────────────────────────
+// ── Export page as a compressed .omnipage zip ─────────────────────────────
 #[tauri::command]
 pub async fn export_page(
     page_id: String,
-    dest_dir: String,
+    dest_path: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -143,17 +149,10 @@ pub async fn export_page(
         .query_row("SELECT data FROM page_strokes WHERE page_id=?1", rusqlite::params![page_id], |row| row.get(0))
         .unwrap_or_else(|_| "[]".to_string());
 
-    // Create export folder: dest_dir/<SafeTitle>_omnipage/
-    let safe_title: String = page.title.chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' })
-        .collect::<String>()
-        .trim().to_string();
-    let export_folder = PathBuf::from(&dest_dir).join(format!("{}_omnipage", safe_title));
-    std::fs::create_dir_all(&export_folder).map_err(|e| e.to_string())?;
-    let files_export_dir = export_folder.join("files");
-    std::fs::create_dir_all(&files_export_dir).map_err(|e| e.to_string())?;
+    // Collect file data for blocks that reference files
+    struct FileEntry { zip_name: String, data: Vec<u8> }
+    let mut file_entries: Vec<FileEntry> = Vec::new();
 
-    // Build block list — for file blocks, copy the file and rewrite path to relative
     let export_blocks: Vec<serde_json::Value> = blocks.iter().map(|block| {
         let mut content_val: serde_json::Value =
             serde_json::from_str(&block.content).unwrap_or(serde_json::json!({}));
@@ -164,11 +163,11 @@ pub async fn export_page(
                     let src = PathBuf::from(&stored_path);
                     if src.exists() {
                         if let Some(file_name) = src.file_name() {
-                            let dest = files_export_dir.join(file_name);
-                            let _ = std::fs::copy(&src, &dest);
-                            content_val["stored_path"] = serde_json::json!(
-                                format!("files/{}", file_name.to_string_lossy())
-                            );
+                            let zip_name = format!("files/{}", file_name.to_string_lossy());
+                            if let Ok(data) = std::fs::read(&src) {
+                                file_entries.push(FileEntry { zip_name: zip_name.clone(), data });
+                                content_val["stored_path"] = serde_json::json!(zip_name);
+                            }
                         }
                     }
                 }
@@ -184,35 +183,63 @@ pub async fn export_page(
         })
     }).collect();
 
-    // Write page.json
+    // Build manifest JSON
     let manifest = serde_json::json!({
         "version": 1,
         "page": { "title": page.title },
         "blocks": export_blocks,
         "strokes": strokes,
     });
-    let json_path = export_folder.join("page.json");
-    std::fs::write(
-        &json_path,
-        serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?;
 
-    Ok(export_folder.to_string_lossy().to_string())
+    // Write zip to dest_path
+    let zip_file = std::fs::File::create(&dest_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(zip_file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    zip.start_file("page.json", options).map_err(|e| e.to_string())?;
+    zip.write_all(&manifest_bytes).map_err(|e| e.to_string())?;
+
+    for entry in file_entries {
+        zip.start_file(&entry.zip_name, options).map_err(|e| e.to_string())?;
+        zip.write_all(&entry.data).map_err(|e| e.to_string())?;
+    }
+
+    zip.finish().map_err(|e| e.to_string())?;
+
+    Ok(dest_path)
 }
 
-// ── Import page from an exported folder ───────────────────────────────────
+// ── Import page from a compressed .omnipage zip ───────────────────────────
 #[tauri::command]
 pub async fn import_page(
     space_id: String,
-    import_dir: String,
+    import_path: String,
     state: State<'_, AppState>,
 ) -> Result<Page, String> {
-    let import_path = PathBuf::from(&import_dir);
-    let manifest_file = import_path.join("page.json");
+    let zip_file = std::fs::File::open(&import_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(zip_file).map_err(|e| e.to_string())?;
 
-    let manifest_str = std::fs::read_to_string(&manifest_file).map_err(|e| e.to_string())?;
-    let manifest: serde_json::Value = serde_json::from_str(&manifest_str).map_err(|e| e.to_string())?;
+    // Read page.json from zip
+    let manifest: serde_json::Value = {
+        let mut entry = archive.by_name("page.json").map_err(|_| "Archivo inválido: falta page.json".to_string())?;
+        let mut buf = String::new();
+        entry.read_to_string(&mut buf).map_err(|e| e.to_string())?;
+        serde_json::from_str(&buf).map_err(|e| e.to_string())?
+    };
+
+    // Extract file entries into memory: zip_path -> bytes
+    let mut file_map: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        if name.starts_with("files/") && !name.ends_with('/') {
+            let mut data = Vec::new();
+            entry.read_to_end(&mut data).map_err(|e| e.to_string())?;
+            file_map.insert(name, data);
+        }
+    }
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
@@ -244,21 +271,22 @@ pub async fn import_page(
             let height  = block["height"].as_f64().unwrap_or(300.0);
             let z_index = block["z_index"].as_i64().unwrap_or(0);
             let raw_content = block["content"].as_str().unwrap_or("{}");
+            if raw_content.len() > MAX_CONTENT_LEN { continue; }
 
-            // For file blocks: copy the file to app dir and update the stored_path
             let content = if block_type == "file" {
                 if let Ok(mut cv) = serde_json::from_str::<serde_json::Value>(raw_content) {
                     if let Some(rel) = cv.get("stored_path").and_then(|v| v.as_str()).map(|s| s.to_string()) {
                         if rel.starts_with("files/") {
-                            let src = import_path.join(&rel);
-                            if src.exists() {
-                                if let Some(file_name) = src.file_name() {
-                                    let uid = &Uuid::new_v4().to_string()[..8];
-                                    let new_name = format!("{}_{}", uid, file_name.to_string_lossy());
-                                    let dest = files_dest.join(&new_name);
-                                    if std::fs::copy(&src, &dest).is_ok() {
-                                        cv["stored_path"] = serde_json::json!(dest.to_string_lossy().to_string());
-                                    }
+                            if let Some(data) = file_map.get(&rel) {
+                                let file_name = PathBuf::from(&rel)
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| "file".to_string());
+                                let uid = &Uuid::new_v4().to_string()[..8];
+                                let new_name = format!("{}_{}", uid, file_name);
+                                let dest = files_dest.join(&new_name);
+                                if std::fs::write(&dest, data).is_ok() {
+                                    cv["stored_path"] = serde_json::json!(dest.to_string_lossy().to_string());
                                 }
                             }
                         }

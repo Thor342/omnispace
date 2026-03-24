@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Space, Page, Block, BlockType, AppFile } from "./types";
+import type { Space, Page, Block, BlockType, AppFile, Note, Task, Link } from "./types";
 
 // ─── Spaces ─────────────────────────────────────────────
 export const getSpaces = () => invoke<Space[]>("get_spaces");
@@ -19,10 +19,10 @@ export const updatePageTitle = (id: string, title: string) =>
 export const reorderPages = (pageIds: string[]) =>
   invoke<void>("reorder_pages", { pageIds });
 export const deletePage = (id: string) => invoke<void>("delete_page", { id });
-export const exportPage = (pageId: string, destDir: string) =>
-  invoke<string>("export_page", { pageId, destDir });
-export const importPage = (spaceId: string, importDir: string) =>
-  invoke<import("./types").Page>("import_page", { spaceId, importDir });
+export const exportPage = (pageId: string, destPath: string) =>
+  invoke<string>("export_page", { pageId, destPath });
+export const importPage = (spaceId: string, importPath: string) =>
+  invoke<import("./types").Page>("import_page", { spaceId, importPath });
 
 // ─── Blocks ─────────────────────────────────────────────
 export const getBlocks = (pageId: string) =>
@@ -57,7 +57,31 @@ export const deleteCategory = (id: string) => invoke<void>("delete_category", { 
 export const assignSpaceToCategory = (spaceId: string, categoryId: string | null) =>
   invoke<void>("assign_space_to_category", { spaceId, categoryId });
 
+// ─── Notes ──────────────────────────────────────────────
+export const getNotes = (spaceId: string) => invoke<Note[]>("get_notes", { spaceId });
+export const createNote = (spaceId: string, title: string, content: string) =>
+  invoke<Note>("create_note", { spaceId, title, content });
+export const updateNote = (id: string, title: string, content: string) =>
+  invoke<void>("update_note", { id, title, content });
+export const deleteNote = (id: string) => invoke<void>("delete_note", { id });
+
+// ─── Tasks ──────────────────────────────────────────────
+export const getTasks = (spaceId: string) => invoke<Task[]>("get_tasks", { spaceId });
+export const createTask = (spaceId: string, title: string) =>
+  invoke<Task>("create_task", { spaceId, title });
+export const toggleTask = (id: string) => invoke<boolean>("toggle_task", { id });
+export const updateTaskTitle = (id: string, title: string) =>
+  invoke<void>("update_task_title", { id, title });
+export const deleteTask = (id: string) => invoke<void>("delete_task", { id });
+
+// ─── Links ──────────────────────────────────────────────
+export const getLinks = (spaceId: string) => invoke<Link[]>("get_links", { spaceId });
+export const createLink = (spaceId: string, title: string, url: string) =>
+  invoke<Link>("create_link", { spaceId, title, url });
+export const deleteLink = (id: string) => invoke<void>("delete_link", { id });
+
 // ─── Files ──────────────────────────────────────────────
+export const getFiles = (spaceId: string) => invoke<AppFile[]>("get_files", { spaceId });
 export const importFile = (spaceId: string, sourcePath: string) =>
   invoke<AppFile>("import_file", { spaceId, sourcePath });
 export const deleteFile = (id: string) => invoke<void>("delete_file", { id });

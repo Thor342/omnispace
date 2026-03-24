@@ -6,6 +6,16 @@
   export let onContentChange: (c: string) => void;
 
   let data: LinkContent = JSON.parse(content || '{"url":"","title":"","link_type":"general"}');
+
+  // Auto-fix: if saved as "general" but URL matches a known embeddable service, upgrade it
+  if (data.url && data.link_type === "general") {
+    const corrected = detectType(data.url);
+    if (corrected !== "general") {
+      data = { ...data, link_type: corrected, og_title: undefined, og_description: undefined, og_image: undefined, og_site: undefined };
+      onContentChange(JSON.stringify(data));
+    }
+  }
+
   let editing = !data.url;
   let inputUrl = data.url;
   let inputTitle = data.title;
@@ -16,6 +26,7 @@
 
   function detectType(url: string): LinkType {
     if (url.includes("youtube.com/watch") || url.includes("youtu.be/")) return "youtube";
+    if (url.includes("canva.com/design/")) return "canva";
     if (url.includes("figma.com/design") || url.includes("figma.com/file") || url.includes("figma.com/proto")) return "figma";
     if (url.includes("docs.google.com/presentation")) return "gslides";
     if (url.includes("docs.google.com/document")) return "gdocs";
@@ -35,10 +46,10 @@
           return "";
         }
         case "canva": {
-          // https://www.canva.com/design/ID/slug/view → add ?embed
+          // Strip query params, replace /edit with /view, append ?embed
           const u = new URL(url);
-          u.searchParams.set("embed", "");
-          return u.toString().replace("embed=", "embed");
+          const cleanPath = u.pathname.replace(/\/(edit|view|present)(\/.*)?$/, "/view");
+          return `https://www.canva.com${cleanPath}?embed`;
         }
         case "figma":
           return `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`;
@@ -77,11 +88,28 @@
   };
   $: platform = PLATFORM[data.link_type] ?? PLATFORM.general;
 
-  // ── Save ───────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────
   function isValid(url: string) {
     try { new URL(url); return true; } catch { return false; }
   }
 
+  function domainOf(url: string): string {
+    try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
+  }
+
+  // Bad fallback values that should be ignored when displaying
+  const BAD_TITLES = ["error", "403 forbidden", "access denied", "just a moment", "attention required"];
+  function isBadTitle(t: string) { return BAD_TITLES.some(b => t.trim().toLowerCase() === b); }
+
+  $: displayTitle = (data.og_title && !isBadTitle(data.og_title))
+    ? data.og_title
+    : (data.title && !isBadTitle(data.title) && data.title !== data.url)
+      ? data.title
+      : domainOf(data.url);
+
+  $: displaySite = data.og_site || domainOf(data.url).split(".")[0].toUpperCase();
+
+  // ── Save ───────────────────────────────────────────────
   async function save() {
     error = "";
     const url = inputUrl.trim();
@@ -89,7 +117,7 @@
     if (!isValid(url)) { error = "URL no válida"; return; }
 
     const type = detectType(url);
-    const title = inputTitle.trim() || url;
+    const title = inputTitle.trim() || domainOf(url);
 
     // Base data first (show immediately)
     data = { url, title, link_type: type };
@@ -103,13 +131,13 @@
         const og = await fetchOgMeta(url);
         data = {
           ...data,
-          og_title: og.title || title,
-          og_description: og.description,
-          og_image: og.image,
-          og_site: og.site_name,
+          og_title: og.title || undefined,
+          og_description: og.description || undefined,
+          og_image: og.image || undefined,
+          og_site: og.site_name || undefined,
         };
         onContentChange(JSON.stringify(data));
-      } catch { /* OG fetch failed silently */ }
+      } catch { /* OG fetch failed — fallback to domain display */ }
       finally { loadingOg = false; }
     }
   }
@@ -125,13 +153,28 @@
   {#if editing}
     <!-- ── Form ── -->
     <div class="link-form">
-      <div class="form-hint">Pega un enlace de YouTube, Canva, Figma, Google Slides, Miro…</div>
-      <input bind:value={inputTitle} placeholder="Título (opcional)" />
-      <input
-        bind:value={inputUrl}
-        placeholder="https://…"
-        on:keydown={e => e.key === "Enter" && save()}
-      />
+      {#if data.link_type === "youtube"}
+        <div class="form-hint">Pega el enlace del video de YouTube</div>
+        <input
+          bind:value={inputUrl}
+          placeholder="https://www.youtube.com/watch?v=… o youtu.be/…"
+          on:keydown={e => e.key === "Enter" && save()}
+        />
+      {:else if data.link_type === "canva"}
+        <div class="form-hint">Pega el enlace de tu diseño de Canva</div>
+        <input
+          bind:value={inputUrl}
+          placeholder="https://www.canva.com/design/…"
+          on:keydown={e => e.key === "Enter" && save()}
+        />
+      {:else}
+        <input bind:value={inputTitle} placeholder="Nombre del enlace" />
+        <input
+          bind:value={inputUrl}
+          placeholder="https://…"
+          on:keydown={e => e.key === "Enter" && save()}
+        />
+      {/if}
       {#if error}<p class="err">{error}</p>{/if}
       <div class="form-row">
         <button class="btn-save" on:click={save}>Guardar</button>
@@ -164,26 +207,16 @@
     </div>
 
   {:else}
-    <!-- ── OG preview card ── -->
-    <div class="og-card">
-      {#if data.og_image}
-        <div class="og-image-wrap">
-          <img src={data.og_image} alt={data.og_title || data.title} class="og-image" />
-        </div>
-      {/if}
-      <div class="og-body">
-        {#if data.og_site || loadingOg}
-          <span class="og-site">{loadingOg ? "Cargando vista previa…" : data.og_site}</span>
-        {/if}
-        <p class="og-title">{data.og_title || data.title}</p>
-        {#if data.og_description}
-          <p class="og-desc">{data.og_description}</p>
-        {/if}
-        <p class="og-url">{data.url}</p>
+    <!-- ── Simple link card ── -->
+    <div class="simple-card">
+      <div class="simple-icon">{platform.icon}</div>
+      <div class="simple-info">
+        <span class="simple-site">{loadingOg ? "…" : displaySite}</span>
+        <p class="simple-title">{displayTitle}</p>
       </div>
-      <div class="og-footer">
+      <div class="simple-actions">
         <a href={data.url} target="_blank" rel="noopener" class="open-btn">Abrir ↗</a>
-        <button class="edit-btn" on:click={startEdit}>✏ Editar</button>
+        <button class="edit-btn" on:click={startEdit}>✏</button>
       </div>
     </div>
   {/if}
@@ -250,46 +283,27 @@
   .embed-frame { flex: 1; overflow: hidden; }
   .embed-frame iframe { width: 100%; height: 100%; border: none; display: block; }
 
-  /* ── OG Card ── */
-  .og-card {
-    display: flex; flex-direction: column; flex: 1; overflow: hidden;
+  /* ── Simple card ── */
+  .simple-card {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; flex: 1;
   }
-  .og-image-wrap {
-    flex-shrink: 0; max-height: 55%; overflow: hidden;
-    background: var(--bg-overlay);
-  }
-  .og-image { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
-  .og-body {
-    flex: 1; overflow: hidden; padding: 12px 14px 6px;
-    display: flex; flex-direction: column; gap: 4px; min-height: 0;
-  }
-  .og-site { font-size: 10px; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-  .og-title {
-    font-size: 13px; font-weight: 700; color: var(--text-primary);
-    line-height: 1.35; margin: 0;
-    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
-  }
-  .og-desc {
-    font-size: 11px; color: var(--text-muted); line-height: 1.45; margin: 0;
-    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
-  }
-  .og-url {
-    font-size: 10px; color: var(--text-muted); margin: 0;
+  .simple-icon { font-size: 22px; flex-shrink: 0; }
+  .simple-info { flex: 1; min-width: 0; }
+  .simple-site { font-size: 10px; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .simple-title {
+    font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 2px 0 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    opacity: 0.7;
   }
-  .og-footer {
-    display: flex; gap: 8px; padding: 8px 12px;
-    border-top: 1px solid var(--border); flex-shrink: 0;
-  }
+  .simple-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .open-btn {
-    flex: 1; padding: 7px; background: var(--accent); color: #fff;
+    padding: 6px 12px; background: var(--accent); color: #fff;
     border-radius: 8px; font-size: 12px; font-weight: 600;
-    text-align: center; text-decoration: none; transition: opacity 0.15s;
+    text-decoration: none; transition: opacity 0.15s; white-space: nowrap;
   }
   .open-btn:hover { opacity: 0.88; }
   .edit-btn {
-    padding: 7px 12px; background: var(--bg-active);
+    padding: 6px 10px; background: var(--bg-active);
     border: 1px solid var(--border); border-radius: 8px;
     font-size: 12px; color: var(--text-secondary); transition: background 0.15s;
   }

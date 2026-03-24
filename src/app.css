@@ -38,7 +38,7 @@ input, textarea, [contenteditable] { user-select: text; outline: none; }
   --font-sans:     'Inter', system-ui, -apple-system, sans-serif;
   --font-mono:     'JetBrains Mono', 'Fira Code', monospace;
 
-  --sidebar-w:     240px;
+  --sidebar-w:     310px;
   --transition:    0.15s ease;
 }
 

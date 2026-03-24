@@ -6,16 +6,16 @@
     createSpace, deleteSpace, updateSpace,
     getCategories, createCategory, renameCategory, deleteCategory, assignSpaceToCategory
   } from "../api";
-  import { theme } from "../stores/theme";
-
-  const ICONS  = ["📁","🚀","💡","📚","🎯","🎨","🔬","💼","🏠","🎵","🌿","⚡","🔥","🎮","📝"];
-  const COLORS = ["#6366f1","#ec4899","#f59e0b","#22c55e","#14b8a6","#3b82f6","#a855f7","#ef4444","#f97316"];
+  import DeleteConfirmModal from "./DeleteConfirmModal.svelte";
+  import IconPicker from "./IconPicker.svelte";
+  import SettingsModal from "./SettingsModal.svelte";
+  import appIcon from "../../assets/icon.png";
 
   let collapsed = true;
   let showCreate = false;
   let newName = "";
   let newIcon = "📁";
-  let newColor = "#6366f1";
+
   let showSettings = false;
 
   // ── Category state ───────────────────────────────────────
@@ -23,19 +23,53 @@
   let showCreateCat = false;
   let newCatName = "";
   let newCatIcon = "📂";
-  let newCatColor = "#6366f1";
+
   let confirmDeleteCat: string | null = null;
 
   // ── Space inline edit ────────────────────────────────────
   let editSpaceId: string | null = null;
   let editSpaceName = "";
   let editSpaceIcon = "📁";
-  let editSpaceColor = "#6366f1";
 
   let sidebarClientWidth = 52;
   let _clickedInside = false;
+  let resizing = false;
 
-  $: document.documentElement.style.setProperty('--sidebar-w-current', sidebarClientWidth + 'px');
+  $: {
+    // Footer usa el ancho real (evita que el logo tape los botones)
+    document.documentElement.style.setProperty('--sidebar-w-current', sidebarClientWidth + 'px');
+    // Header usa 0 cuando colapsado (logo está abajo, no tapa el header)
+    document.documentElement.style.setProperty('--sidebar-header-pad', collapsed ? '0px' : sidebarClientWidth + 'px');
+  }
+
+  // ── Resize handle ─────────────────────────────────────────
+  function onResizeStart(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    resizing = true;
+    const startX = e.clientX;
+    const startW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 310;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.body.classList.add('col-resize');
+
+    function onMove(ev: PointerEvent) {
+      const newW = Math.max(180, Math.min(520, startW + ev.clientX - startX));
+      document.documentElement.style.setProperty('--sidebar-w', newW + 'px');
+    }
+    function onUp() {
+      resizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.body.classList.remove('col-resize');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
 
   function handleWindowClick() {
     if (_clickedInside) { _clickedInside = false; return; }
@@ -49,13 +83,14 @@
     editSpaceId = space.id;
     editSpaceName = space.name;
     editSpaceIcon = space.icon;
-    editSpaceColor = space.color;
   }
   async function commitEditSpace() {
     if (!editSpaceId || !editSpaceName.trim()) { editSpaceId = null; return; }
-    await updateSpace(editSpaceId, editSpaceName.trim(), editSpaceIcon, editSpaceColor);
+    const existing = $spaces.find(s => s.id === editSpaceId);
+    const color = existing?.color ?? "#6366f1";
+    await updateSpace(editSpaceId, editSpaceName.trim(), editSpaceIcon, color);
     spaces.update(s => s.map(sp => sp.id === editSpaceId
-      ? { ...sp, name: editSpaceName.trim(), icon: editSpaceIcon, color: editSpaceColor }
+      ? { ...sp, name: editSpaceName.trim(), icon: editSpaceIcon }
       : sp));
     editSpaceId = null;
   }
@@ -64,19 +99,19 @@
   let editCatId: string | null = null;
   let editCatName = "";
   let editCatIcon = "📂";
-  let editCatColor = "#6366f1";
 
   function startEditCat(cat: { id: string; name: string; icon: string; color: string }) {
     editCatId = cat.id;
     editCatName = cat.name;
     editCatIcon = cat.icon;
-    editCatColor = cat.color;
   }
   async function commitEditCat() {
     if (!editCatId || !editCatName.trim()) { editCatId = null; return; }
-    await renameCategory(editCatId, editCatName.trim(), editCatIcon, editCatColor);
+    const existing = $categories.find(c => c.id === editCatId);
+    const color = existing?.color ?? "#6366f1";
+    await renameCategory(editCatId, editCatName.trim(), editCatIcon, color);
     categories.update(c => c.map(cat => cat.id === editCatId
-      ? { ...cat, name: editCatName.trim(), icon: editCatIcon, color: editCatColor }
+      ? { ...cat, name: editCatName.trim(), icon: editCatIcon }
       : cat));
     editCatId = null;
   }
@@ -263,12 +298,16 @@
   $: catSpacesMap = new Map($categories.map(cat => [cat.id, $spaces.filter(s => s.category_id === cat.id)]));
 
   // ── Space actions ────────────────────────────────────────
+  let createSpaceError = false;
+  let createCatError = false;
+
   async function handleCreateSpace() {
-    if (!newName.trim()) return;
-    const space = await createSpace(newName.trim(), newIcon, newColor);
+    if (!newName.trim()) { createSpaceError = true; return; }
+    createSpaceError = false;
+    const space = await createSpace(newName.trim(), newIcon, "#6366f1");
     spaces.update(s => [...s, space]);
     activeSpaceId.set(space.id);
-    newName = ""; newIcon = "📁"; newColor = "#6366f1"; showCreate = false;
+    newName = ""; newIcon = "📁"; showCreate = false;
   }
 
   async function handleDeleteSpace(id: string) {
@@ -282,14 +321,15 @@
 
   // ── Category actions ─────────────────────────────────────
   async function handleCreateCat() {
-    if (!newCatName.trim()) return;
-    const cat = await createCategory(newCatName.trim(), newCatIcon, newCatColor);
+    if (!newCatName.trim()) { createCatError = true; return; }
+    createCatError = false;
+    const cat = await createCategory(newCatName.trim(), newCatIcon, "#6366f1");
     categories.update(c => [...c, cat]);
     // Insert before __uncat__ in sectionOrder
     const ui = sectionOrder.indexOf("__uncat__");
     if (ui >= 0) sectionOrder = [...sectionOrder.slice(0, ui), cat.id, ...sectionOrder.slice(ui)];
     else sectionOrder = [...sectionOrder, cat.id];
-    newCatName = ""; newCatIcon = "📂"; newCatColor = "#6366f1"; showCreateCat = false;
+    newCatName = ""; newCatIcon = "📂"; showCreateCat = false;
   }
 
   async function handleDeleteCat(id: string) {
@@ -317,52 +357,38 @@
   </div>
 {/if}
 
-<!-- ── Delete space modal (5s countdown) ─────────────────── -->
+<!-- ── Delete space modal ────────────────────────────────── -->
 {#if deleteConfirmSpaceId && deleteTargetSpace}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-backdrop" on:click={cancelDeleteSpace} role="dialog" aria-modal="true">
-    <div class="del-modal" on:click|stopPropagation>
-      <div class="del-icon">⚠️</div>
-      <h3>¿Eliminar "{deleteTargetSpace.name}"?</h3>
-      <p class="del-warning">
-        Se eliminarán <strong>permanentemente</strong> todas las páginas, bloques,
-        imágenes, trazos y datos de este espacio.<br/>
-        <strong>Esta acción no se puede deshacer.</strong>
-      </p>
-      {#if deleteSpaceCountdown > 0}
-        <div class="countdown">
-          Lee el mensaje — podrás confirmar en <strong>{deleteSpaceCountdown}s</strong>
-        </div>
-        <div class="countdown-bar">
-          <div class="countdown-fill" style="width:{((5 - deleteSpaceCountdown) / 5) * 100}%" />
-        </div>
-      {/if}
-      <div class="del-actions">
-        <button class="btn-danger" disabled={deleteSpaceCountdown > 0} on:click={confirmDeleteSpaceAction}>
-          {deleteSpaceCountdown > 0 ? `Espera ${deleteSpaceCountdown}s…` : "Sí, eliminar espacio"}
-        </button>
-        <button class="btn-ghost" on:click={cancelDeleteSpace}>Cancelar</button>
-      </div>
-    </div>
-  </div>
+  <DeleteConfirmModal
+    title="¿Eliminar &quot;{deleteTargetSpace.name}&quot;?"
+    countdown={deleteSpaceCountdown}
+    confirmLabel="Sí, eliminar espacio"
+    onConfirm={confirmDeleteSpaceAction}
+    onCancel={cancelDeleteSpace}
+  >
+    Se eliminarán <strong>permanentemente</strong> todas las páginas, bloques,
+    imágenes, trazos y datos de este espacio.<br/>
+    <strong>Esta acción no se puede deshacer.</strong>
+  </DeleteConfirmModal>
 {/if}
 
 <!-- ── Delete category modal ─────────────────────────────── -->
 {#if confirmDeleteCat}
   {@const cat = $categories.find(c => c.id === confirmDeleteCat)}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-backdrop" on:click={() => confirmDeleteCat = null} role="dialog" aria-modal="true">
-    <div class="modal" on:click|stopPropagation>
-      <h3>¿Eliminar categoría "{cat?.name}"?</h3>
-      <p>Los espacios dentro quedarán sin categoría.</p>
-      <div class="modal-actions">
-        <button class="btn-danger" on:click={() => confirmDeleteCat && handleDeleteCat(confirmDeleteCat)}>Eliminar</button>
-        <button class="btn-ghost" on:click={() => confirmDeleteCat = null}>Cancelar</button>
-      </div>
-    </div>
-  </div>
+  <DeleteConfirmModal
+    title="¿Eliminar categoría &quot;{cat?.name}&quot;?"
+    confirmLabel="Sí, eliminar categoría"
+    onConfirm={() => confirmDeleteCat && handleDeleteCat(confirmDeleteCat)}
+    onCancel={() => confirmDeleteCat = null}
+  >
+    Los espacios dentro quedarán sin categoría.<br/>
+    <strong>Esta acción no se puede deshacer.</strong>
+  </DeleteConfirmModal>
+{/if}
+
+<!-- ── Settings modal ───────────────────────────────────── -->
+{#if showSettings}
+  <SettingsModal onClose={() => showSettings = false} />
 {/if}
 
 <!-- ── Edit overlays (close on outside click) ────────────── -->
@@ -376,8 +402,11 @@
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <!-- svelte-ignore a11y-click-events-have-key-events -->
-<aside bind:clientWidth={sidebarClientWidth} class="sidebar" class:collapsed
+<aside bind:clientWidth={sidebarClientWidth} class="sidebar" class:collapsed class:resizing
   on:click={() => { _clickedInside = true; if (collapsed) collapsed = false; }}>
+
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="resize-handle" on:mousedown={onResizeStart}></div>
 
   <div class="sidebar-body">
       <!-- Space list -->
@@ -450,17 +479,8 @@
                       <div class="edit-popup edit-popup-space" on:click|stopPropagation>
                         <input class="edit-input" bind:value={editSpaceName}
                           on:keydown={e => { if (e.key === "Enter") commitEditSpace(); if (e.key === "Escape") editSpaceId = null; }}
-                          autofocus placeholder="Nombre" />
-                        <div class="edit-icons">
-                          {#each ICONS as ic}
-                            <button class="ic-btn" class:selected={editSpaceIcon === ic} on:click={() => editSpaceIcon = ic}>{ic}</button>
-                          {/each}
-                        </div>
-                        <div class="edit-colors">
-                          {#each COLORS as c}
-                            <button class="color-dot" class:selected={editSpaceColor === c} style="background:{c}" on:click={() => editSpaceColor = c} />
-                          {/each}
-                        </div>
+                          placeholder="Nombre" />
+                        <IconPicker bind:value={editSpaceIcon} />
                         <div class="edit-actions">
                           <button class="edit-save" on:click={commitEditSpace}>Guardar</button>
                           <button class="edit-cancel" on:click={() => editSpaceId = null}>✕</button>
@@ -512,17 +532,8 @@
                     <div class="edit-popup edit-popup-space" on:click|stopPropagation>
                       <input class="edit-input" bind:value={editCatName}
                         on:keydown={e => { if (e.key === "Enter") commitEditCat(); if (e.key === "Escape") editCatId = null; }}
-                        autofocus placeholder="Nombre" />
-                      <div class="edit-icons">
-                        {#each ICONS as ic}
-                          <button class="ic-btn" class:selected={editCatIcon === ic} on:click={() => editCatIcon = ic}>{ic}</button>
-                        {/each}
-                      </div>
-                      <div class="edit-colors">
-                        {#each COLORS as c}
-                          <button class="color-dot" class:selected={editCatColor === c} style="background:{c}" on:click={() => editCatColor = c} />
-                        {/each}
-                      </div>
+                        placeholder="Nombre" />
+                      <IconPicker bind:value={editCatIcon} />
                       <div class="edit-actions">
                         <button class="edit-save" on:click={commitEditCat}>Guardar</button>
                         <button class="edit-cancel" on:click={() => editCatId = null}>✕</button>
@@ -565,17 +576,8 @@
                           <div class="edit-popup edit-popup-space" on:click|stopPropagation>
                             <input class="edit-input" bind:value={editSpaceName}
                               on:keydown={e => { if (e.key === "Enter") commitEditSpace(); if (e.key === "Escape") editSpaceId = null; }}
-                              autofocus placeholder="Nombre" />
-                            <div class="edit-icons">
-                              {#each ICONS as ic}
-                                <button class="ic-btn" class:selected={editSpaceIcon === ic} on:click={() => editSpaceIcon = ic}>{ic}</button>
-                              {/each}
-                            </div>
-                            <div class="edit-colors">
-                              {#each COLORS as c}
-                                <button class="color-dot" class:selected={editSpaceColor === c} style="background:{c}" on:click={() => editSpaceColor = c} />
-                              {/each}
-                            </div>
+                              placeholder="Nombre" />
+                            <IconPicker bind:value={editSpaceIcon} />
                             <div class="edit-actions">
                               <button class="edit-save" on:click={commitEditSpace}>Guardar</button>
                               <button class="edit-cancel" on:click={() => editSpaceId = null}>✕</button>
@@ -636,40 +638,32 @@
     {:else if showCreate}
       <div class="create-panel">
         <input bind:value={newName} placeholder="Nombre del espacio"
-          on:keydown={e => e.key === "Enter" && handleCreateSpace()} autofocus />
-        <div class="icon-picker">
-          {#each ICONS as ic}
-            <button class="ic-btn" class:selected={newIcon === ic} on:click={() => newIcon = ic}>{ic}</button>
-          {/each}
-        </div>
-        <div class="color-picker">
-          {#each COLORS as c}
-            <button class="color-dot" class:selected={newColor === c} style="background:{c}" on:click={() => newColor = c} />
-          {/each}
-        </div>
+          class:input-error={createSpaceError}
+          on:input={() => createSpaceError = false}
+          on:keydown={e => e.key === "Enter" && handleCreateSpace()} />
+        {#if createSpaceError}
+          <p class="field-error">Escribe un nombre para el espacio</p>
+        {/if}
+        <IconPicker bind:value={newIcon} />
         <div class="create-actions">
           <button class="btn-primary" on:click={handleCreateSpace}>Crear</button>
-          <button class="btn-ghost" on:click={() => showCreate = false}>Cancelar</button>
+          <button class="btn-ghost" on:click={() => { showCreate = false; createSpaceError = false; }}>Cancelar</button>
         </div>
       </div>
 
     {:else if showCreateCat}
       <div class="create-panel">
         <input bind:value={newCatName} placeholder="Nombre de la categoría"
-          on:keydown={e => e.key === "Enter" && handleCreateCat()} autofocus />
-        <div class="icon-picker">
-          {#each ICONS as ic}
-            <button class="ic-btn" class:selected={newCatIcon === ic} on:click={() => newCatIcon = ic}>{ic}</button>
-          {/each}
-        </div>
-        <div class="color-picker">
-          {#each COLORS as c}
-            <button class="color-dot" class:selected={newCatColor === c} style="background:{c}" on:click={() => newCatColor = c} />
-          {/each}
-        </div>
+          class:input-error={createCatError}
+          on:input={() => createCatError = false}
+          on:keydown={e => e.key === "Enter" && handleCreateCat()} />
+        {#if createCatError}
+          <p class="field-error">Escribe un nombre para la categoría</p>
+        {/if}
+        <IconPicker bind:value={newCatIcon} />
         <div class="create-actions">
           <button class="btn-primary" on:click={handleCreateCat}>Crear</button>
-          <button class="btn-ghost" on:click={() => showCreateCat = false}>Cancelar</button>
+          <button class="btn-ghost" on:click={() => { showCreateCat = false; createCatError = false; }}>Cancelar</button>
         </div>
       </div>
 
@@ -677,22 +671,7 @@
       <button class="new-space-btn" on:click={() => showCreate = true}>+ Nuevo Espacio</button>
       <button class="new-cat-btn" on:click={() => showCreateCat = true}>+ Nueva Categoría</button>
 
-      <div class="settings-wrap">
-        <button class="settings-btn" on:click={() => showSettings = !showSettings}>⚙️ Configuración</button>
-        {#if showSettings}
-          <div class="settings-panel">
-            <p class="settings-title">Apariencia</p>
-            <div class="theme-row">
-              <button class="theme-option" class:active={$theme === "dark"} on:click={() => theme.set("dark")}>
-                <span>🌙</span><span>Oscuro</span>
-              </button>
-              <button class="theme-option" class:active={$theme === "light"} on:click={() => theme.set("light")}>
-                <span>☀️</span><span>Claro</span>
-              </button>
-            </div>
-          </div>
-        {/if}
-      </div>
+      <button class="settings-btn" on:click|stopPropagation={() => showSettings = true}>⚙️ Configuración</button>
     {/if}
       </div><!-- /sidebar-footer -->
     </div><!-- /sidebar-body -->
@@ -703,9 +682,9 @@
     if (collapsed) { showCreate = false; showSettings = false; showCreateCat = false; }
   }}>
     {#if !collapsed}
-      <span class="logo">⬡ OmniSpace</span>
+      <img src={appIcon} alt="OmniSpace" class="logo-img" /><span class="logo"> OmniSpace</span>
     {:else}
-      <span class="logo-icon">⬡</span>
+      <img src={appIcon} alt="OmniSpace" class="logo-img" />
     {/if}
     <span class="toggle-arrow">{collapsed ? '›' : '‹'}</span>
   </div>
@@ -714,19 +693,31 @@
 <style>
   .sidebar {
     width: var(--sidebar-w); min-width: var(--sidebar-w);
+    height: 100%;
     background: var(--bg-surface); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; overflow: hidden;
-    transition: width 0.2s ease, min-width 0.2s ease;
+    position: relative;
+    pointer-events: auto; /* restaura clicks dentro del sidebar */
+    transition: width 0.25s cubic-bezier(0.4,0,0.2,1), min-width 0.25s cubic-bezier(0.4,0,0.2,1);
   }
-  .sidebar.collapsed { width: 52px; min-width: 52px; }
+  .sidebar.resizing, .sidebar.resizing * { transition: none !important; }
+
+  .resize-handle {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 5px;
+    cursor: col-resize; z-index: 30;
+    transition: background 0.15s;
+  }
+  .resize-handle:hover { background: var(--accent); opacity: 0.5; }
+  .sidebar.collapsed { width: auto; min-width: unset; }
+  .sidebar.collapsed .sidebar-header { border-top: none; }
 
   /* Body (expandable, slides up) */
   .sidebar-body {
     display: flex; flex-direction: column;
-    overflow-y: auto; max-height: 60vh;
+    overflow-y: auto; flex: 1; min-height: 0;
     border-bottom: 1px solid var(--border);
-    height: auto;
   }
+  .sidebar.collapsed .sidebar-body { display: none; }
 
   /* Header: siempre al fondo, actúa como toggle */
   .sidebar-header {
@@ -735,16 +726,9 @@
     flex-shrink: 0; min-height: 44px; cursor: pointer;
   }
   .sidebar-header:hover { background: var(--bg-hover); }
-  .logo-icon { font-size: 16px; margin: 0 auto; }
+  .logo-img { width: 22px; height: 22px; object-fit: contain; flex-shrink: 0; }
   .toggle-arrow { font-size: 14px; color: var(--text-muted); margin-left: auto; flex-shrink: 0; }
   .logo { font-size: 14px; font-weight: 700; letter-spacing: -0.3px; white-space: nowrap; }
-  .collapse-btn {
-    font-size: 18px; color: var(--text-muted);
-    padding: 2px 6px; border-radius: 4px; line-height: 1; flex-shrink: 0;
-    transition: color var(--transition), background var(--transition);
-  }
-  .collapse-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
-
   /* Space list */
   .space-list { overflow-y: auto; padding: 10px 6px; overflow-x: hidden; }
 
@@ -947,8 +931,6 @@
     border-radius: var(--radius-sm); color: var(--text-primary); outline: none;
   }
 
-  .edit-icons { display: flex; flex-wrap: wrap; gap: 2px; }
-  .edit-colors { display: flex; flex-wrap: wrap; gap: 4px; }
 
   .edit-actions { display: flex; gap: 4px; }
   .edit-save {
@@ -997,70 +979,19 @@
 
   .create-panel { display: flex; flex-direction: column; gap: 7px; }
   .create-panel input { width: 100%; padding: 7px 10px; }
+  .create-panel input.input-error { border-color: var(--red, #ef4444); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--red, #ef4444) 25%, transparent); }
+  .field-error { margin: 0; font-size: 11px; color: var(--red, #ef4444); }
   .icon-picker { display: flex; flex-wrap: wrap; gap: 3px; }
-  .ic-btn { font-size: 14px; padding: 3px; border-radius: 4px; }
-  .ic-btn:hover, .ic-btn.selected { background: var(--bg-active); }
-  .color-picker { display: flex; flex-wrap: wrap; gap: 5px; }
-  .color-dot { width: 15px; height: 15px; border-radius: 50%; border: 2px solid transparent; }
-  .color-dot.selected { border-color: var(--text-primary); }
+
   .create-actions { display: flex; gap: 6px; }
   .btn-primary { flex: 1; padding: 7px; background: var(--accent); color: #fff; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; }
   .btn-primary:hover { opacity: 0.9; }
   .btn-ghost { flex: 1; padding: 7px; background: var(--bg-active); color: var(--text-secondary); border-radius: var(--radius-sm); font-size: 13px; }
 
-  .settings-wrap { position: relative; }
   .settings-btn {
     width: 100%; padding: 6px 8px; border-radius: var(--radius-sm);
     font-size: 12px; color: var(--text-muted); text-align: left;
     transition: all var(--transition);
   }
   .settings-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
-  .settings-panel {
-    position: absolute; bottom: calc(100% + 6px); left: 0; right: 0;
-    background: var(--bg-surface); border: 1px solid var(--border);
-    border-radius: var(--radius-md); padding: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3); z-index: 50;
-  }
-  .settings-title { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
-  .theme-row { display: flex; gap: 6px; }
-  .theme-option {
-    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
-    padding: 10px 6px; border-radius: var(--radius-sm); font-size: 12px;
-    color: var(--text-secondary); background: var(--bg-overlay);
-    border: 1px solid var(--border); transition: all var(--transition);
-  }
-  .theme-option span:first-child { font-size: 18px; }
-  .theme-option:hover { border-color: var(--accent); }
-  .theme-option.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 600; }
-
-  .modal-backdrop {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.65);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 200; backdrop-filter: blur(3px);
-  }
-  .del-modal {
-    background: var(--bg-surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 28px; max-width: 400px; width: 92%;
-    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
-    display: flex; flex-direction: column; gap: 12px;
-  }
-  .del-icon { font-size: 32px; text-align: center; }
-  .del-modal h3 { font-size: 16px; font-weight: 700; color: var(--text-primary); text-align: center; }
-  .del-warning { font-size: 12px; color: var(--text-secondary); text-align: center; line-height: 1.6; }
-  .del-warning strong { color: var(--red); }
-  .countdown {
-    text-align: center; font-size: 12px; color: var(--text-muted);
-    background: var(--bg-overlay); border-radius: var(--radius-sm); padding: 7px;
-  }
-  .countdown strong { color: var(--accent); }
-  .countdown-bar { height: 4px; background: var(--bg-overlay); border-radius: 2px; overflow: hidden; }
-  .countdown-fill { height: 100%; background: var(--accent); transition: width 1s linear; }
-  .del-actions { display: flex; gap: 8px; }
-  .btn-danger {
-    flex: 1; padding: 9px; background: var(--red); color: #fff;
-    border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
-    transition: opacity var(--transition);
-  }
-  .btn-danger:hover:not(:disabled) { opacity: 0.85; }
-  .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

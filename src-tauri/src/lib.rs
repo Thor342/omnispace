@@ -14,6 +14,119 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .register_uri_scheme_protocol("stream", |_app, request| {
+            use std::io::{Read, Seek, SeekFrom};
+
+            let uri_path = request.uri().path().to_string();
+            // URL-decode percent-encoded characters
+            let decoded = {
+                let mut out = String::with_capacity(uri_path.len());
+                let bytes = uri_path.as_bytes();
+                let mut i = 0;
+                while i < bytes.len() {
+                    if bytes[i] == b'%' && i + 2 < bytes.len() {
+                        if let Ok(s) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
+                            if let Ok(b) = u8::from_str_radix(s, 16) {
+                                out.push(b as char);
+                                i += 3;
+                                continue;
+                            }
+                        }
+                    }
+                    out.push(bytes[i] as char);
+                    i += 1;
+                }
+                out
+            };
+            // Strip leading slash (Windows path: /C:/Users/...)
+            let path_str = decoded.trim_start_matches('/');
+            let path = std::path::Path::new(path_str);
+
+            let meta = match std::fs::metadata(path) {
+                Ok(m) => m,
+                Err(_) => {
+                    return tauri::http::Response::builder()
+                        .status(404)
+                        .body(vec![])
+                        .unwrap()
+                }
+            };
+            let file_size = meta.len();
+
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            let content_type = match ext.as_str() {
+                "mp4" | "m4v" => "video/mp4",
+                "webm" => "video/webm",
+                "mkv" => "video/x-matroska",
+                "avi" => "video/x-msvideo",
+                "mov" => "video/quicktime",
+                "mp3" => "audio/mpeg",
+                "wav" => "audio/wav",
+                "ogg" => "audio/ogg",
+                "m4a" => "audio/mp4",
+                "flac" => "audio/flac",
+                _ => "application/octet-stream",
+            };
+
+            // Parse range header (default to first 2MB if none)
+            let (start, end) = if let Some(range_val) = request.headers().get("range") {
+                let range_str = range_val.to_str().unwrap_or("");
+                if let Some(range) = range_str.strip_prefix("bytes=") {
+                    let parts: Vec<&str> = range.split('-').collect();
+                    let s: u64 = parts[0].parse().unwrap_or(0);
+                    let e: u64 = if parts.len() > 1 && !parts[1].is_empty() {
+                        parts[1].parse().unwrap_or(file_size.saturating_sub(1))
+                    } else {
+                        (s + 2_097_152).min(file_size.saturating_sub(1))
+                    };
+                    (s, e.min(file_size.saturating_sub(1)))
+                } else {
+                    (0, (2_097_152u64).min(file_size.saturating_sub(1)))
+                }
+            } else {
+                (0, (2_097_152u64).min(file_size.saturating_sub(1)))
+            };
+
+            let length = end - start + 1;
+
+            let mut file = match std::fs::File::open(path) {
+                Ok(f) => f,
+                Err(_) => {
+                    return tauri::http::Response::builder()
+                        .status(500)
+                        .body(vec![])
+                        .unwrap()
+                }
+            };
+            let _ = file.seek(SeekFrom::Start(start));
+
+            // Read loop — file.read() may return fewer bytes than requested
+            let mut buf = vec![0u8; length as usize];
+            let mut total = 0usize;
+            while total < buf.len() {
+                match file.read(&mut buf[total..]) {
+                    Ok(0) => break,
+                    Ok(n) => total += n,
+                    Err(_) => break,
+                }
+            }
+            buf.truncate(total);
+            let actual_end = start + total as u64 - 1;
+
+            tauri::http::Response::builder()
+                .status(206)
+                .header("Content-Type", content_type)
+                .header("Content-Range", format!("bytes {}-{}/{}", start, actual_end, file_size))
+                .header("Content-Length", total.to_string())
+                .header("Accept-Ranges", "bytes")
+                .header("Access-Control-Allow-Origin", "*")
+                .body(buf)
+                .unwrap()
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -37,6 +150,29 @@ pub fn run() {
                 db: Mutex::new(conn),
                 files_dir,
             });
+
+            // Disable WebView2's native pinch zoom so touchpad pinch
+            // generates WheelEvents (ctrlKey=true) that our canvas handles.
+            #[cfg(target_os = "windows")]
+            {
+                let window = app.get_webview_window("main").unwrap();
+                window.with_webview(|wv| unsafe {
+                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings5;
+                    use windows::core::Interface;
+                    let result = (|| -> windows::core::Result<()> {
+                        let settings5: ICoreWebView2Settings5 = wv
+                            .controller()
+                            .CoreWebView2()?
+                            .Settings()?
+                            .cast()?;
+                        settings5.SetIsPinchZoomEnabled(false)?;
+                        Ok(())
+                    })();
+                    if let Err(e) = result {
+                        eprintln!("WebView2 pinch zoom disable failed: {e:?}");
+                    }
+                }).ok();
+            }
 
             Ok(())
         })
@@ -72,12 +208,30 @@ pub fn run() {
             commands::strokes::get_strokes,
             commands::strokes::save_strokes,
             // Files
+            commands::files::get_files,
             commands::files::import_file,
             commands::files::save_image_bytes,
+            commands::files::save_audio_bytes,
             commands::files::delete_file,
+            commands::files::open_mic_settings,
             commands::files::open_file,
             commands::files::read_file_as_base64,
             commands::files::fetch_og_meta,
+            // Notes
+            commands::notes::get_notes,
+            commands::notes::create_note,
+            commands::notes::update_note,
+            commands::notes::delete_note,
+            // Tasks
+            commands::tasks::get_tasks,
+            commands::tasks::create_task,
+            commands::tasks::toggle_task,
+            commands::tasks::update_task_title,
+            commands::tasks::delete_task,
+            // Links
+            commands::links::get_links,
+            commands::links::create_link,
+            commands::links::delete_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

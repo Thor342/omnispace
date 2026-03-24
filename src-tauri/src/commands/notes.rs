@@ -4,6 +4,9 @@ use chrono::Utc;
 use tauri::State;
 use uuid::Uuid;
 
+const MAX_TITLE_LEN: usize = 200;
+const MAX_CONTENT_LEN: usize = 10 * 1024 * 1024; // 10 MB
+
 #[tauri::command]
 pub async fn get_notes(space_id: String, state: State<'_, AppState>) -> Result<Vec<Note>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
@@ -36,6 +39,8 @@ pub async fn create_note(
     content: String,
     state: State<'_, AppState>,
 ) -> Result<Note, String> {
+    if title.len() > MAX_TITLE_LEN { return Err("Título demasiado largo".to_string()); }
+    if content.len() > MAX_CONTENT_LEN { return Err("Contenido demasiado grande".to_string()); }
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     let id = Uuid::new_v4().to_string();
@@ -56,6 +61,8 @@ pub async fn update_note(
     content: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    if title.len() > MAX_TITLE_LEN { return Err("Título demasiado largo".to_string()); }
+    if content.len() > MAX_CONTENT_LEN { return Err("Contenido demasiado grande".to_string()); }
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     db.execute(

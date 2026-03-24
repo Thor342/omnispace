@@ -1,11 +1,12 @@
 <script lang="ts">
   import { fly } from "svelte/transition";
   import { tick, onMount, onDestroy } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { open, save } from "@tauri-apps/plugin-dialog";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { listen } from "@tauri-apps/api/event";
   import { spaces, activeSpaceId, pagesMap, activePageId } from "../stores/spaces";
   import SearchOverlay from "./SearchOverlay.svelte";
+  import DeleteConfirmModal from "./DeleteConfirmModal.svelte";
   import { getPages, createPage, deletePage, updatePageTitle, reorderPages, exportPage, importPage, getBlocks } from "../api";
   import PageCanvas from "./canvas/PageCanvas.svelte";
 
@@ -59,14 +60,18 @@
   }
 
   // ── Tab drag-scroll ───────────────────────────────────
+  // scrollDragMoved: solo para el sistema de scroll del contenedor.
+  // tabDragMoved: solo para detach/reorder de tabs individuales.
+  // Separados para evitar que un scroll accidental bloquee clics en tabs.
   let tabDragging = false;
   let tabDragStartX = 0;
   let tabDragScrollLeft = 0;
+  // tabDragMoved: solo para el sistema de detach/reorder de tabs individuales.
+  // El drag-scroll del contenedor NO lo toca para evitar bloquear clics en tabs.
   let tabDragMoved = false;
 
   function onTabsMouseDown(e: MouseEvent) {
     tabDragging = true;
-    tabDragMoved = false;
     tabDragStartX = e.clientX;
     tabDragScrollLeft = tabsEl?.scrollLeft ?? 0;
     window.addEventListener("mousemove", onTabsMouseMove);
@@ -76,7 +81,6 @@
   function onTabsMouseMove(e: MouseEvent) {
     if (!tabDragging) return;
     const dx = e.clientX - tabDragStartX;
-    if (Math.abs(dx) > 4) tabDragMoved = true;
     if (tabsEl) tabsEl.scrollLeft = tabDragScrollLeft - dx;
   }
 
@@ -87,11 +91,20 @@
   }
 
   // ── Load pages ────────────────────────────────────────
+  // Recuerda la última página visitada por espacio para restaurarla al volver
+  let lastPagePerSpace: Record<string, string> = {};
+  let _prevSpaceId: string | null = null;
+
   $: if ($activeSpaceId) loadPages($activeSpaceId);
 
   async function loadPages(spaceId: string) {
-    // Siempre resetear a null para garantizar que {#if activePage} haga ciclo
-    // false → true y PageCanvas se remonte limpio (evita condición de carrera
+    // Guardar la página actual del espacio anterior antes de resetear
+    if (_prevSpaceId && $activePageId) {
+      lastPagePerSpace[_prevSpaceId] = $activePageId;
+    }
+    _prevSpaceId = spaceId;
+
+    // Resetear a null para que PageCanvas se remonte limpio (evita race condition
     // donde un fetch async tardío sobrescribe activePageId con otra página)
     activePageId.set(null);
     await tick();
@@ -99,7 +112,11 @@
     // Si las páginas ya están cacheadas, no hace falta ir al backend
     if ($pagesMap[spaceId]) {
       const pages = $pagesMap[spaceId];
-      if (pages.length > 0) activePageId.set(pages[0].id);
+      if (pages.length > 0) {
+        const savedId = lastPagePerSpace[spaceId];
+        const target = savedId ? pages.find(p => p.id === savedId) : null;
+        activePageId.set(target?.id ?? pages[0].id);
+      }
       return;
     }
 
@@ -108,7 +125,9 @@
     if ($activeSpaceId !== spaceId) return;
     pagesMap.update(m => ({ ...m, [spaceId]: pages }));
     if (pages.length > 0) {
-      activePageId.set(pages[0].id);
+      const savedId = lastPagePerSpace[spaceId];
+      const target = savedId ? pages.find(p => p.id === savedId) : null;
+      activePageId.set(target?.id ?? pages[0].id);
     } else {
       const page = await createPage(spaceId, "Página 1");
       if ($activeSpaceId !== spaceId) return;
@@ -131,9 +150,15 @@
   let deleteConfirmId: string | null = null;
   let deleteCountdown = 0;
   let deleteInterval: ReturnType<typeof setInterval> | null = null;
+  let deleteShake = false;
 
   function requestDeletePage(pageId: string) {
-    if (deleteConfirmId === pageId) return;
+    if (deleteConfirmId === pageId) {
+      // Ya está en proceso: shake para indicar que el usuario debe esperar
+      deleteShake = false;
+      requestAnimationFrame(() => { deleteShake = true; });
+      return;
+    }
     if (deleteInterval) { clearInterval(deleteInterval); deleteInterval = null; }
     deleteConfirmId = pageId;
     deleteCountdown = 5;
@@ -150,16 +175,22 @@
     if (deleteInterval) { clearInterval(deleteInterval); deleteInterval = null; }
     deleteConfirmId = null;
     deleteCountdown = 0;
+    deleteShake = false;
   }
 
   async function confirmDeletePage() {
     if (!deleteConfirmId || deleteCountdown > 0 || !$activeSpaceId) return;
     const pageId = deleteConfirmId;
+    const spaceId = $activeSpaceId;
     cancelDeletePage();
     await deletePage(pageId);
-    const remaining = spacePages.filter(p => p.id !== pageId);
-    pagesMap.update(m => ({ ...m, [$activeSpaceId!]: remaining }));
-    if ($activePageId === pageId) activePageId.set(remaining[0]?.id ?? null);
+    let remaining = spacePages.filter(p => p.id !== pageId);
+    if (remaining.length === 0) {
+      const newPage = await createPage(spaceId, "Página 1");
+      remaining = [newPage];
+    }
+    pagesMap.update(m => ({ ...m, [spaceId]: remaining }));
+    if ($activePageId === pageId) activePageId.set(remaining[0].id);
   }
 
   // ── Rename page (dblclick) ────────────────────────────
@@ -183,12 +214,17 @@
   let exporting = false;
   async function handleExport() {
     if (!activePage || !$activeSpaceId || exporting) return;
-    const destDir = await open({ directory: true, title: "Selecciona la carpeta de destino" });
-    if (!destDir || typeof destDir !== "string") return;
+    const safe = activePage.title.replace(/[^a-zA-Z0-9 \-]/g, "_").trim();
+    const destPath = await save({
+      title: "Guardar página como",
+      defaultPath: `${safe}.omnipage.zip`,
+      filters: [{ name: "OmniSpace Page", extensions: ["zip", "omnipage"] }],
+    });
+    if (!destPath) return;
     exporting = true;
     try {
-      const exportedPath = await exportPage(activePage.id, destDir);
-      showToast(`Página exportada en: ${exportedPath}`);
+      await exportPage(activePage.id, destPath);
+      showToast("Página exportada correctamente");
     } catch (e) {
       showToast(`Error al exportar: ${e}`, "error");
     } finally {
@@ -200,11 +236,16 @@
   let importing = false;
   async function handleImport() {
     if (!$activeSpaceId || importing) return;
-    const importDir = await open({ directory: true, title: "Selecciona la carpeta _omnipage a importar" });
-    if (!importDir || typeof importDir !== "string") return;
+    const filePath = await open({
+      title: "Importar página OmniSpace",
+      filters: [{ name: "OmniSpace Page", extensions: ["zip", "omnipage"] }],
+      multiple: false,
+      directory: false,
+    });
+    if (!filePath || typeof filePath !== "string") return;
     importing = true;
     try {
-      const page = await importPage($activeSpaceId, importDir);
+      const page = await importPage($activeSpaceId, filePath);
       pagesMap.update(m => ({ ...m, [$activeSpaceId!]: [...(m[$activeSpaceId!] ?? []), page] }));
       activePageId.set(page.id);
       showToast(`Página "${page.title}" importada correctamente`);
@@ -238,8 +279,10 @@
 
   async function showPreview(e: MouseEvent, pageId: string) {
     if (previewTimer) clearTimeout(previewTimer);
+    const target = e.currentTarget as HTMLElement;
     previewTimer = setTimeout(async () => {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
       if (!previewCache[pageId]) {
         try {
           const rawBlocks = await getBlocks(pageId);
@@ -249,7 +292,9 @@
             .map(b => ({ type: b.block_type, label: blockLabel(b) }));
         } catch { previewCache[pageId] = []; }
       }
-      preview = { pageId, blocks: previewCache[pageId], x: rect.left + rect.width / 2, y: rect.top };
+      const rawX = rect.left + rect.width / 2;
+      const clampedX = Math.max(120, Math.min(window.innerWidth - 120, rawX));
+      preview = { pageId, blocks: previewCache[pageId], x: clampedX, y: rect.top };
     }, 500);
   }
 
@@ -353,7 +398,7 @@
     detachStartX = e.clientX;
     dragIntent = "none";
     detachDragActive = false;
-    tabDragMoved = false;
+    tabDragMoved = false;  // reset del sistema tab (detach/reorder)
     ghost = null;
     window.addEventListener("mousemove", onTabDetachMove);
     window.addEventListener("mouseup",   onTabDetachUp);
@@ -503,42 +548,19 @@
 
 <!-- ── Delete confirmation modal ──────────────────────── -->
 {#if deleteConfirmId && deleteTargetPage}
-  <div class="modal-backdrop"
-    role="button" tabindex="0"
-    aria-label="Cancelar"
-    on:click={e => { if (e.target === e.currentTarget) cancelDeletePage(); }}
-    on:keydown={e => e.key === 'Escape' && cancelDeletePage()}
+  <DeleteConfirmModal
+    title="¿Eliminar &quot;{deleteTargetPage.title}&quot;?"
+    countdown={deleteCountdown}
+    confirmLabel="Sí, eliminar página"
+    shake={deleteShake}
+    onConfirm={confirmDeletePage}
+    onCancel={cancelDeletePage}
+    on:shakeend={() => deleteShake = false}
   >
-    <div class="del-modal" role="dialog" aria-modal="true" aria-label="Confirmar eliminación">
-      <div class="del-icon">⚠️</div>
-      <h3>¿Eliminar "{deleteTargetPage.title}"?</h3>
-      <p class="del-warning">
-        Esta acción eliminará <strong>permanentemente</strong> todos los bloques, notas,
-        imágenes, archivos, trazos y datos de esta página.<br/>
-        <strong>Esta acción no se puede deshacer.</strong>
-      </p>
-
-      {#if deleteCountdown > 0}
-        <div class="countdown">
-          Lee el mensaje — podrás confirmar en <strong>{deleteCountdown}s</strong>
-        </div>
-        <div class="countdown-bar">
-          <div class="countdown-fill" style="width:{((5 - deleteCountdown) / 5) * 100}%" />
-        </div>
-      {/if}
-
-      <div class="del-actions">
-        <button
-          class="btn-danger"
-          disabled={deleteCountdown > 0}
-          on:click={confirmDeletePage}
-        >
-          {deleteCountdown > 0 ? `Espera ${deleteCountdown}s…` : "Sí, eliminar página"}
-        </button>
-        <button class="btn-ghost" on:click={cancelDeletePage}>Cancelar</button>
-      </div>
-    </div>
-  </div>
+    Esta acción eliminará <strong>permanentemente</strong> todos los bloques, notas,
+    imágenes, archivos, trazos y datos de esta página.<br/>
+    <strong>Esta acción no se puede deshacer.</strong>
+  </DeleteConfirmModal>
 {/if}
 
 <main class="work-area">
@@ -594,7 +616,7 @@
         >
           <!-- Drop indicator -->
           {#if reorderDragId !== null && dropIndicatorX >= 0}
-            <div class="drop-indicator" style="left:{dropIndicatorX}px;" />
+            <div class="drop-indicator" style="left:{dropIndicatorX}px;"></div>
           {/if}
 
           {#each spacePages.filter(p => !detachedPageIds.has(p.id)) as page (page.id)}
@@ -625,14 +647,12 @@
                 <span class="tab-label">{page.title}</span>
               {/if}
 
-              {#if spacePages.length > 1}
-                <button
-                  class="tab-del"
-                  class:armed={deleteConfirmId === page.id}
-                  on:click|stopPropagation={() => requestDeletePage(page.id)}
-                  title="Eliminar página"
-                >×</button>
-              {/if}
+              <button
+                class="tab-del"
+                class:armed={deleteConfirmId === page.id}
+                on:click|stopPropagation={() => requestDeletePage(page.id)}
+                title="Eliminar página"
+              >×</button>
             </div>
           {/each}
         </div>
@@ -705,12 +725,14 @@
 
   /* ── Header ── */
   .work-header {
-    display: flex; align-items: flex-end;
+    display: flex; align-items: stretch;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0; min-height: 46px;
-    overflow: hidden; gap: 0;
+    overflow: visible; gap: 0;
     user-select: none;
+    padding-left: var(--sidebar-header-pad, 0px);
+    transition: padding-left 0.25s cubic-bezier(0.4,0,0.2,1);
   }
 
   .space-info {
@@ -868,56 +890,6 @@
   }
   .action-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
   .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  /* ── Delete confirmation modal ── */
-  .modal-backdrop {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.65);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 300; backdrop-filter: blur(3px);
-  }
-  .del-modal {
-    background: var(--bg-surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 28px;
-    max-width: 420px; width: 92%;
-    box-shadow: 0 24px 60px rgba(0,0,0,0.5);
-    display: flex; flex-direction: column; gap: 14px;
-  }
-  .del-icon { font-size: 36px; text-align: center; }
-  .del-modal h3 { font-size: 17px; font-weight: 700; color: var(--text-primary); text-align: center; }
-  .del-warning {
-    font-size: 13px; color: var(--text-secondary); text-align: center; line-height: 1.6;
-  }
-  .del-warning strong { color: var(--red); }
-
-  .countdown {
-    text-align: center; font-size: 12px; color: var(--text-muted);
-    background: var(--bg-overlay); border-radius: var(--radius-sm); padding: 8px;
-  }
-  .countdown strong { color: var(--accent); }
-
-  .countdown-bar {
-    height: 4px; background: var(--bg-overlay); border-radius: 2px; overflow: hidden;
-  }
-  .countdown-fill {
-    height: 100%; background: var(--accent);
-    transition: width 1s linear;
-  }
-
-  .del-actions { display: flex; gap: 8px; }
-  .btn-danger {
-    flex: 1; padding: 10px; background: var(--red); color: #fff;
-    border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
-    transition: opacity var(--transition); outline: none;
-  }
-  .btn-danger:hover:not(:disabled) { opacity: 0.85; }
-  .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-ghost {
-    flex: 1; padding: 10px; background: var(--bg-active);
-    color: var(--text-secondary); border-radius: var(--radius-sm);
-    font-size: 13px; outline: none;
-  }
-  .btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
 
   /* ── Tab drag ghost ── */
   .tab-ghost {

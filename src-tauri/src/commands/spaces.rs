@@ -30,6 +30,17 @@ pub async fn get_spaces(state: State<'_, AppState>) -> Result<Vec<Space>, String
     Ok(spaces)
 }
 
+fn validate_space_inputs(name: &str, icon: &str, color: &str) -> Result<(), String> {
+    if name.trim().is_empty() { return Err("El nombre no puede estar vacío".to_string()); }
+    if name.len() > 100 { return Err("El nombre no puede superar 100 caracteres".to_string()); }
+    if icon.len() > 20 { return Err("Icono inválido".to_string()); }
+    // color must be #RRGGBB or #RGB
+    let valid_color = color.starts_with('#') && matches!(color.len(), 4 | 7) &&
+        color[1..].chars().all(|c| c.is_ascii_hexdigit());
+    if !valid_color { return Err("Color inválido, debe ser formato #RRGGBB".to_string()); }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn create_space(
     name: String,
@@ -37,6 +48,7 @@ pub async fn create_space(
     color: String,
     state: State<'_, AppState>,
 ) -> Result<Space, String> {
+    validate_space_inputs(&name, &icon, &color)?;
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
     let id = Uuid::new_v4().to_string();
@@ -66,6 +78,7 @@ pub async fn update_space(
     color: String,
     state: State<'_, AppState>,
 ) -> Result<Space, String> {
+    validate_space_inputs(&name, &icon, &color)?;
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
 

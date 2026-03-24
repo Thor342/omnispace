@@ -37,7 +37,7 @@
       <WorkArea />
     </div>
 
-    <!-- Sidebar flotante, anclado abajo-izquierda, tamaño automático -->
+    <!-- Sidebar flotante, ocupa toda la altura izquierda -->
     <div class="sidebar-float">
       <Sidebar />
     </div>
@@ -65,5 +65,13 @@
     position: absolute;
     left: 0; bottom: 0;
     z-index: 20;
+    display: flex;
+    flex-direction: column;
+    transition: top 0.25s cubic-bezier(0.4,0,0.2,1);
+    pointer-events: none; /* deja pasar clicks al canvas */
+  }
+  /* Cuando el sidebar está expandido, sube hasta el tope */
+  :global(.sidebar-float:has(.sidebar:not(.collapsed))) {
+    top: 0;
   }
 </style>

@@ -7,13 +7,40 @@
   // ── Date constants ─────────────────────────────────────
   const MONTH_NAMES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                        "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-  const MONTH_SHORT = ["Ene","Feb","Mar","Abr","May","Jun",
-                       "Jul","Ago","Sep","Oct","Nov","Dic"];
-  const DAY_NAMES   = ["D","L","M","X","J","V","S"];
+const DAY_NAMES   = ["D","L","M","X","J","V","S"];
   const DAY_FULL    = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
   const DAY_LONG    = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
 
   const now = new Date();
+
+  // ── Marked days (persisted in content) ─────────────────
+  let parsed: { markedDays?: string[] } = {};
+  try { parsed = JSON.parse(content || "{}"); } catch { parsed = {}; }
+  let markedDays: string[] = parsed.markedDays ?? [];
+
+  function saveMarked() {
+    onContentChange(JSON.stringify({ markedDays }));
+  }
+
+  function dateKey(y: number, m: number, d: number): string {
+    return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+
+  $: markedSet = new Set(markedDays);
+
+  function isMarked(y: number, m: number, d: number): boolean {
+    return markedSet.has(dateKey(y, m, d));
+  }
+
+  function toggleMark(y: number, m: number, d: number) {
+    const key = dateKey(y, m, d);
+    if (markedSet.has(key)) {
+      markedDays = markedDays.filter(k => k !== key);
+    } else {
+      markedDays = [...markedDays, key];
+    }
+    saveMarked();
+  }
 
   // ── Navigation state ───────────────────────────────────
   let navYear  = now.getFullYear();
@@ -21,8 +48,8 @@
 
   // ── Container size tracking ────────────────────────────
   let containerEl: HTMLDivElement;
-  let cw = 820;
-  let ch = 580;
+  let cw = 400;
+  let ch = 300;
 
   onMount(() => {
     const ro = new ResizeObserver(entries => {
@@ -40,10 +67,8 @@
   $: dayNamePx  = Math.max(10, Math.min(cw * 0.10, ch * 0.11));
   $: dayMonthPx = Math.max(9,  Math.min(cw * 0.07, ch * 0.08));
 
-  // ── View mode: year → semester → month → week → day ───
+  // ── View mode: month → week → day (max = month) ────────
   $: viewMode = (() => {
-    if (cw >= 580 && ch >= 400) return "year";
-    if (cw >= 360 && ch >= 300) return "semester";
     if (cw >= 230 && ch >= 210) return "month";
     if (cw >= 180 && ch >= 170) return "week";
     return "day";
@@ -61,20 +86,6 @@
     return t < n;
   }
 
-  // ── Year view data ─────────────────────────────────────
-  $: yearMonths = Array.from({ length: 12 }, (_, i) => ({
-    month: i, year: navYear,
-    start: monthStart(navYear, i),
-    days:  monthDays(navYear, i),
-  }));
-
-  // ── Semester view: 6 months starting from navMonth ─────
-  $: semesterMonths = Array.from({ length: 6 }, (_, i) => {
-    const m = (navMonth + i) % 12;
-    const y = navYear + Math.floor((navMonth + i) / 12);
-    return { month: m, year: y, start: monthStart(y, m), days: monthDays(y, m) };
-  });
-
   // ── Month view ─────────────────────────────────────────
   $: monthData = {
     year: navYear, month: navMonth,
@@ -84,13 +95,12 @@
 
   // ── Week view: current week of navMonth/navYear ─────────
   $: weekData = (() => {
-    // Find the Monday of the week containing the 1st of navMonth (or today if same month)
     const base = (navYear === now.getFullYear() && navMonth === now.getMonth())
       ? now
       : new Date(navYear, navMonth, 1);
-    const day = base.getDay(); // 0=Sun
+    const day = base.getDay();
     const monday = new Date(base);
-    monday.setDate(base.getDate() - ((day + 6) % 7)); // Monday
+    monday.setDate(base.getDate() - ((day + 6) % 7));
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
@@ -100,44 +110,18 @@
 
   // ── Navigation ─────────────────────────────────────────
   function prev() {
-    if (viewMode === "year") { navYear--; }
-    else if (viewMode === "semester") {
-      navMonth -= 6;
-      if (navMonth < 0) { navMonth += 12; navYear--; }
-    }
-    else if (viewMode === "month") {
-      navMonth--;
-      if (navMonth < 0) { navMonth = 11; navYear--; }
-    }
-    else if (viewMode === "week" || viewMode === "day") {
-      navMonth--;
-      if (navMonth < 0) { navMonth = 11; navYear--; }
-    }
+    navMonth--;
+    if (navMonth < 0) { navMonth = 11; navYear--; }
   }
 
   function next() {
-    if (viewMode === "year") { navYear++; }
-    else if (viewMode === "semester") {
-      navMonth += 6;
-      if (navMonth > 11) { navMonth -= 12; navYear++; }
-    }
-    else if (viewMode === "month") {
-      navMonth++;
-      if (navMonth > 11) { navMonth = 0; navYear++; }
-    }
-    else if (viewMode === "week" || viewMode === "day") {
-      navMonth++;
-      if (navMonth > 11) { navMonth = 0; navYear++; }
-    }
+    navMonth++;
+    if (navMonth > 11) { navMonth = 0; navYear++; }
   }
 
   function goToday() { navYear = now.getFullYear(); navMonth = now.getMonth(); }
 
-  $: navLabel = (() => {
-    if (viewMode === "year") return `${navYear}`;
-    if (viewMode === "semester") return `${MONTH_SHORT[navMonth]} – ${MONTH_SHORT[(navMonth+5)%12]} ${navYear}`;
-    return `${MONTH_NAMES[navMonth]} ${navYear}`;
-  })();
+  $: navLabel = `${MONTH_NAMES[navMonth]} ${navYear}`;
 </script>
 
 <div class="cal-block" bind:this={containerEl}>
@@ -152,56 +136,8 @@
   </div>
   {/if}
 
-  <!-- ── YEAR view ────────────────────────────────────── -->
-  {#if viewMode === "year"}
-    <div class="year-grid">
-      {#each yearMonths as { month, year, start, days }}
-        <div class="month-card">
-          <div class="month-name">{MONTH_SHORT[month]}</div>
-          <div class="days-grid">
-            {#each DAY_NAMES as d}
-              <span class="day-hdr">{d}</span>
-            {/each}
-            {#each { length: start } as _}<span />{/each}
-            {#each { length: days } as _, i}
-              {@const day = i + 1}
-              <span
-                class="day"
-                class:today={isToday(year, month, day)}
-                class:past={isPast(year, month, day)}
-              >{day}</span>
-            {/each}
-          </div>
-        </div>
-      {/each}
-    </div>
-
-  <!-- ── SEMESTER view ────────────────────────────────── -->
-  {:else if viewMode === "semester"}
-    <div class="semester-grid">
-      {#each semesterMonths as { month, year, start, days }}
-        <div class="month-card">
-          <div class="month-name">{MONTH_SHORT[month]} {year !== navYear ? year : ""}</div>
-          <div class="days-grid">
-            {#each DAY_NAMES as d}
-              <span class="day-hdr">{d}</span>
-            {/each}
-            {#each { length: start } as _}<span />{/each}
-            {#each { length: days } as _, i}
-              {@const day = i + 1}
-              <span
-                class="day"
-                class:today={isToday(year, month, day)}
-                class:past={isPast(year, month, day)}
-              >{day}</span>
-            {/each}
-          </div>
-        </div>
-      {/each}
-    </div>
-
   <!-- ── MONTH view ───────────────────────────────────── -->
-  {:else if viewMode === "month"}
+  {#if viewMode === "month"}
     <div class="month-full">
       <div class="days-grid-full">
         {#each DAY_NAMES as d}
@@ -210,11 +146,18 @@
         {#each { length: monthData.start } as _}<span />{/each}
         {#each { length: monthData.days } as _, i}
           {@const day = i + 1}
-          <span
+          {@const key = dateKey(monthData.year, monthData.month, day)}
+          <button
             class="day day-lg"
             class:today={isToday(monthData.year, monthData.month, day)}
             class:past={isPast(monthData.year, monthData.month, day)}
-          >{day}</span>
+            class:marked={markedSet.has(key)}
+            on:click={() => toggleMark(monthData.year, monthData.month, day)}
+            title={markedSet.has(key) ? "Quitar recordatorio" : "Marcar como recordatorio"}
+          >
+            {day}
+            {#if markedSet.has(key)}<span class="mark-dot" />{/if}
+          </button>
         {/each}
       </div>
     </div>
@@ -224,10 +167,18 @@
     <div class="week-grid">
       {#each weekData as date}
         {@const isT = isToday(date.getFullYear(), date.getMonth(), date.getDate())}
-        <div class="week-day" class:week-today={isT}>
+        {@const wkey = dateKey(date.getFullYear(), date.getMonth(), date.getDate())}
+        <button
+          class="week-day"
+          class:week-today={isT}
+          class:week-marked={markedSet.has(wkey)}
+          on:click={() => toggleMark(date.getFullYear(), date.getMonth(), date.getDate())}
+          title={markedSet.has(wkey) ? "Quitar recordatorio" : "Marcar como recordatorio"}
+        >
           <span class="week-day-name">{DAY_FULL[date.getDay()]}</span>
           <span class="week-day-num" class:today={isT}>{date.getDate()}</span>
-        </div>
+          {#if markedSet.has(wkey)}<span class="mark-dot" />{/if}
+        </button>
       {/each}
     </div>
 
@@ -268,40 +219,12 @@
   }
   .nav-btn:hover { color: var(--accent); background: var(--accent-dim); }
 
-  /* ── Year grid ── */
-  .year-grid {
-    flex: 1; overflow: auto;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 8px;
-    scrollbar-width: none;
-  }
-  .year-grid::-webkit-scrollbar { display: none; }
-
-  /* ── Semester grid ── */
-  .semester-grid {
-    flex: 1; overflow: auto;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 10px;
-    scrollbar-width: none;
-  }
-  .semester-grid::-webkit-scrollbar { display: none; }
-
-  /* ── Month cards ── */
-  .month-card {
-    background: var(--bg-overlay); border-radius: 10px; padding: 7px 8px;
-    border: 1px solid var(--border);
-  }
-  .month-name {
-    font-size: 9px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 0.9px; color: var(--accent); margin-bottom: 5px;
-  }
-
-  /* ── Days grid (shared) ── */
-  .days-grid {
+  /* ── Full month view ── */
+  .month-full { flex: 1; overflow: auto; scrollbar-width: none; }
+  .month-full::-webkit-scrollbar { display: none; }
+  .days-grid-full {
     display: grid; grid-template-columns: repeat(7, 1fr);
-    gap: 1px; text-align: center;
+    gap: 3px; text-align: center; padding: 2px;
   }
   .day-hdr {
     font-size: 8px; color: var(--text-muted); font-weight: 700;
@@ -312,27 +235,33 @@
     padding: 1px 0; border-radius: 50%;
     aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
     transition: background 0.1s, color 0.1s;
-    cursor: default;
+    cursor: pointer; position: relative; flex-direction: column; gap: 0;
   }
   .day:hover { background: var(--bg-hover); color: var(--text-primary); }
   .day.today {
     background: var(--accent); color: #fff; font-weight: 800;
     box-shadow: 0 1px 4px rgba(99,102,241,0.35);
   }
-  .day.past { opacity: 0.25; }
-
-  /* ── Full month view ── */
-  .month-full { flex: 1; overflow: auto; scrollbar-width: none; }
-  .month-full::-webkit-scrollbar { display: none; }
-  .days-grid-full {
-    display: grid; grid-template-columns: repeat(7, 1fr);
-    gap: 3px; text-align: center; padding: 2px;
+  .day.past { opacity: 0.45; }
+  .day.marked {
+    background: rgba(251,191,36,0.15);
+    color: var(--text-primary);
+    box-shadow: inset 0 0 0 1.5px rgba(251,191,36,0.5);
   }
+  .day.marked.today { background: var(--accent); box-shadow: 0 1px 4px rgba(99,102,241,0.35); }
   .day-lg {
-    font-size: 12px; padding: 4px;
+    font-size: 13px; padding: 2px 4px 6px;
     border-radius: 8px; aspect-ratio: unset;
-    min-height: 28px;
+    min-height: 34px; justify-content: flex-start; padding-top: 6px;
   }
+
+  /* ── Marked dot ── */
+  .mark-dot {
+    display: block; width: 5px; height: 5px; border-radius: 50%;
+    background: #f59e0b; flex-shrink: 0;
+    position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
+  }
+  .day.today .mark-dot { background: rgba(255,255,255,0.85); }
 
   /* ── Week view ── */
   .week-grid {
@@ -343,11 +272,17 @@
     justify-content: center; gap: 4px;
     background: var(--bg-overlay); border-radius: 10px; padding: 6px 2px;
     transition: background 0.15s; border: 1px solid var(--border);
+    cursor: pointer; position: relative;
   }
   .week-day:hover { background: var(--bg-hover); }
   .week-today {
     background: var(--accent-dim); border-color: var(--accent);
   }
+  .week-marked {
+    border-color: #f59e0b;
+    background: rgba(251,191,36,0.08);
+  }
+  .week-marked.week-today { border-color: var(--accent); }
   .week-day-name {
     font-size: 9px; font-weight: 700; color: var(--text-muted);
     text-transform: uppercase; letter-spacing: 0.5px;
@@ -361,6 +296,9 @@
   .week-day-num.today {
     background: var(--accent); color: #fff;
     box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+  }
+  .week-day .mark-dot {
+    bottom: 5px;
   }
 
   /* ── Day view ── */

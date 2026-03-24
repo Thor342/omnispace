@@ -25,6 +25,11 @@ fn detect_file_type(path: &str) -> String {
         "excel".to_string()
     } else if lower.ends_with(".ppt") || lower.ends_with(".pptx") {
         "powerpoint".to_string()
+    } else if lower.ends_with(".mp3") || lower.ends_with(".wav") || lower.ends_with(".ogg")
+        || lower.ends_with(".flac") || lower.ends_with(".m4a") || lower.ends_with(".aac")
+        || lower.ends_with(".opus") || lower.ends_with(".wma")
+    {
+        "audio".to_string()
     } else {
         "other".to_string()
     }
@@ -63,9 +68,20 @@ pub async fn import_file(
     source_path: String,
     state: State<'_, AppState>,
 ) -> Result<AppFile, String> {
+    const MAX_FILE_SIZE: u64 = 500 * 1024 * 1024; // 500 MB
     let src = Path::new(&source_path);
     if !src.exists() {
-        return Err(format!("File not found: {}", source_path));
+        return Err("Archivo no encontrado".to_string());
+    }
+    let file_size = src.metadata().map(|m| m.len()).unwrap_or(0);
+    if file_size > MAX_FILE_SIZE {
+        return Err("El archivo excede el tamaño máximo permitido (500 MB)".to_string());
+    }
+    // Block dangerous extensions
+    let ext_lower = src.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let blocked_exts = ["exe","bat","cmd","com","msi","ps1","sh","vbs","js","jar","dmg","app"];
+    if blocked_exts.contains(&ext_lower.as_str()) {
+        return Err("Tipo de archivo no permitido".to_string());
     }
 
     let file_name = src
@@ -133,12 +149,19 @@ pub async fn save_image_bytes(
     ext: String,
     state: State<'_, AppState>,
 ) -> Result<AppFile, String> {
+    const MAX_IMAGE_SIZE: usize = 50 * 1024 * 1024; // 50 MB
+    if bytes.len() > MAX_IMAGE_SIZE {
+        return Err("La imagen excede el tamaño máximo permitido (50 MB)".to_string());
+    }
     let files_dir = state.files_dir.join(&space_id);
     fs::create_dir_all(&files_dir).map_err(|e| e.to_string())?;
 
     let id = Uuid::new_v4().to_string();
     // ext may come as "image/png" → strip to just "png"
-    let clean_ext = ext.split('/').last().unwrap_or("png");
+    let clean_ext = match ext.split('/').last().unwrap_or("png") {
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" => ext.split('/').last().unwrap_or("png"),
+        _ => "png",
+    };
     let file_name = format!("clipboard_{}.{}", &id[..8], clean_ext);
     let dest = files_dir.join(&file_name);
 
@@ -160,35 +183,104 @@ pub async fn save_image_bytes(
     })
 }
 
+/// Save raw audio bytes (from MediaRecorder) as a .webm file in the space's files directory
+#[tauri::command]
+pub async fn save_audio_bytes(
+    space_id: String,
+    bytes: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<AppFile, String> {
+    const MAX_AUDIO_SIZE: usize = 200 * 1024 * 1024; // 200 MB
+    if bytes.len() > MAX_AUDIO_SIZE {
+        return Err("El audio excede el tamaño máximo permitido (200 MB)".to_string());
+    }
+    let files_dir = state.files_dir.join(&space_id);
+    fs::create_dir_all(&files_dir).map_err(|e| e.to_string())?;
+
+    let id = Uuid::new_v4().to_string();
+    let now_str = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let file_name = format!("grabacion_{}.webm", now_str);
+    let dest = files_dir.join(&file_name);
+
+    fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+
+    let size = bytes.len() as i64;
+    let now = Utc::now().to_rfc3339();
+    let stored_path = dest.to_string_lossy().to_string();
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT INTO files (id, space_id, name, original_path, stored_path, file_type, size, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        rusqlite::params![id, space_id, file_name, "grabacion", stored_path, "audio", size, now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(AppFile {
+        id,
+        space_id,
+        name: file_name,
+        original_path: "grabacion".to_string(),
+        stored_path,
+        file_type: "audio".to_string(),
+        size,
+        created_at: now,
+    })
+}
+
 #[tauri::command]
 pub async fn read_file_as_base64(path: String) -> Result<String, String> {
     let data = fs::read(&path).map_err(|e| e.to_string())?;
     Ok(base64_encode(&data))
 }
 
-/// Open a local file with the OS default application
 #[tauri::command]
-pub async fn open_file(path: String) -> Result<(), String> {
+pub async fn open_mic_settings() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &path])
+        std::process::Command::new("explorer.exe")
+            .arg("ms-settings:privacy-microphone")
             .spawn()
             .map_err(|e| e.to_string())?;
     }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .arg(&path)
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
             .spawn()
             .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_file(path: String) -> Result<(), String> {
+    // Validate: must be an absolute path to an existing file (no shell metacharacters)
+    let p = std::path::Path::new(&path);
+    if !p.is_absolute() || !p.exists() {
+        return Err("Ruta de archivo inválida".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // explorer.exe opens the file with its default associated app — no shell involved
+        std::process::Command::new("explorer.exe")
+            .arg(&path)
+            .spawn()
+            .map_err(|_| "No se pudo abrir el archivo".to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|_| "No se pudo abrir el archivo".to_string())?;
     }
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
             .arg(&path)
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|_| "No se pudo abrir el archivo".to_string())?;
     }
     Ok(())
 }
@@ -205,19 +297,41 @@ pub struct OgMeta {
 
 #[tauri::command]
 pub async fn fetch_og_meta(url: String) -> Result<OgMeta, String> {
+    // Bloquear SSRF: solo permitir http/https hacia IPs públicas
+    let parsed = reqwest::Url::parse(&url).map_err(|_| "URL inválida".to_string())?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return Err("Esquema de URL no permitido".to_string()),
+    }
+    if let Some(host) = parsed.host_str() {
+        let blocked = [
+            "localhost", "127.0.0.1", "::1", "0.0.0.0",
+            "169.254.", "192.168.", "10.", "172.16.", "172.17.",
+            "172.18.", "172.19.", "172.20.", "172.21.", "172.22.",
+            "172.23.", "172.24.", "172.25.", "172.26.", "172.27.",
+            "172.28.", "172.29.", "172.30.", "172.31.",
+        ];
+        if blocked.iter().any(|b| host == *b || host.starts_with(*b)) {
+            return Err("URL no permitida".to_string());
+        }
+    }
+
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (compatible; OmniSpace/1.0; +https://omnispace.app)")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
         .timeout(std::time::Duration::from_secs(8))
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| "Error interno".to_string())?;
 
     let resp = client
         .get(&url)
+        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .header("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
         .send()
         .await
-        .map_err(|e| format!("Error de red: {}", e))?;
+        .map_err(|_| "Error de red al obtener metadatos".to_string())?;
 
-    let html = resp.text().await.map_err(|e| e.to_string())?;
+    let html = resp.text().await.map_err(|_| "Error al leer respuesta".to_string())?;
 
     fn extract_meta(html: &str, property: &str) -> String {
         // Handle both attribute orders: property/name first, then content; or content first
@@ -253,22 +367,53 @@ pub async fn fetch_og_meta(url: String) -> Result<OgMeta, String> {
         String::new()
     }
 
-    let og_title = extract_meta(&html, "og:title");
+    fn is_bad_value(s: &str) -> bool {
+        let low = s.trim().to_lowercase();
+        [
+            "error", "403 forbidden", "access denied", "just a moment",
+            "attention required", "checking your browser", "please wait",
+            "robot check", "security check", "unsupported client",
+            "enable javascript", "noindex", "nofollow",
+        ].iter().any(|b| low == *b || low.starts_with(b))
+    }
+
+    // Check if response looks like a bot-blocked page
+    let is_bot_blocked = html.contains("Unsupported client")
+        || html.contains("Enable JavaScript")
+        || html.contains("enable javascript")
+        || html.contains("cf-browser-verification")
+        || html.contains("Please enable cookies");
+
+    if is_bot_blocked {
+        return Err("Sitio requiere navegador real".to_string());
+    }
+
+    let og_title_raw = extract_meta(&html, "og:title");
+    let og_title = if is_bad_value(&og_title_raw) { String::new() } else { og_title_raw };
+
     let title = if og_title.is_empty() {
-        // Fallback to <title>
-        html.find("<title>")
+        let raw = html.find("<title>")
             .and_then(|s| {
                 let rest = &html[s + 7..];
                 rest.find("</title>").map(|e| rest[..e].trim().to_string())
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if is_bad_value(&raw) { String::new() } else { raw }
     } else {
         og_title
     };
 
+    let og_desc_raw = extract_meta(&html, "og:description");
+    let description = if is_bad_value(&og_desc_raw) { String::new() } else { og_desc_raw };
+
+    // If we got no useful data at all, return an error so the UI shows the fallback
+    if title.is_empty() && description.is_empty() && extract_meta(&html, "og:image").is_empty() {
+        return Err("No se pudieron obtener metadatos".to_string());
+    }
+
     Ok(OgMeta {
         title:       decode_entities(&title),
-        description: decode_entities(&extract_meta(&html, "og:description")),
+        description: decode_entities(&description),
         image:       extract_meta(&html, "og:image"),
         site_name:   decode_entities(&extract_meta(&html, "og:site_name")),
     })

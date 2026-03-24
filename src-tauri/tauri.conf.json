@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OmniSpace",
-  "version": "0.1.0",
+  "version": "0.2.5",
   "identifier": "com.omnispace.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -28,18 +28,32 @@
         "enable": true,
         "scope": ["**"]
       },
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: https://asset.localhost blob:; frame-src https://www.youtube.com asset: https://asset.localhost blob:; media-src 'self' data: asset: https://asset.localhost blob:;"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost blob:; frame-src https://www.youtube.com https://www.canva.com https://www.figma.com https://docs.google.com https://miro.com https://www.loom.com asset: http://asset.localhost blob:; media-src 'self' data: asset: http://asset.localhost http://stream.localhost blob:;"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "OmniSpace",
+    "copyright": "Copyright © 2026 OmniSpace. Todos los derechos reservados.",
+    "category": "Productivity",
+    "shortDescription": "Organizador personal con lienzos, notas y tareas",
+    "longDescription": "OmniSpace es un organizador personal todo en uno que funciona completamente de forma local en tu computador. Crea espacios de trabajo, notas, tareas, calendarios y lienzos digitales sin necesidad de conexión a internet ni cuentas de usuario.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
-    ]
+    ],
+    "licenseFile": "resources/license.rtf",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Spanish"],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   },
   "plugins": {
     "updater": {

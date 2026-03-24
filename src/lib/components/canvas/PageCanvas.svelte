@@ -6,10 +6,14 @@
     getBlocks, createBlock, updateBlockPosition, updateBlockContent,
     updateBlockZindex, deleteBlock, restoreBlock, getStrokes, saveStrokes, importFile
   } from "../../api";
-  import type { Block, BlockType, StrokePath, AppFile } from "../../types";
+  import type { Block, BlockType, AppFile, StrokePath } from "../../types";
   import BlockContainer from "../blocks/Block.svelte";
   import CanvasShape from "./CanvasShape.svelte";
   import CanvasToolbar from "./CanvasToolbar.svelte";
+  import RecordAudioModal from "./RecordAudioModal.svelte";
+  import { CW, CH, renderStroke, redrawAll as _redrawAll, eraseAt as _eraseAt, getCanvasPos } from "./canvasDrawing";
+  import { type SnapResult, findSnapTarget, getPortCoords, isConnectorType } from "./canvasSnap";
+  import { type HistoryEntry, pushHistory as _pushHistory } from "./canvasHistory";
 
   export let pageId: string;
   export let spaceId: string;
@@ -19,6 +23,7 @@
   let strokes: StrokePath[] = [];
   let maxZ = 0;
   let selectedBlockId: string | null = null;
+  let showRecordModal = false;
 
   // Draw
   let drawMode = false;
@@ -35,8 +40,9 @@
   let shapeStrokeWidth = 2;
   // Connector (line/arrow) creation tracking
   let shapeEndX = 0, shapeEndY = 0;
-  let createStartSnapId: string | null = null;
-  let createEndSnapId: string | null = null;
+  let createSnapStart: SnapResult = null;
+  let createSnapEnd: SnapResult = null;
+  let lineStyle: "solid" | "dashed" | "dotted" = "solid";
   let penColor = "#6366f1";
   let penWidth = 3;
   let eraserSize = 24; // canvas units
@@ -66,34 +72,87 @@
   let multiDragOriginX = 0, multiDragOriginY = 0;
   let multiDragOrigPos = new Map<string, { x: number; y: number }>();
 
-  // Multi-touch pinch tracking
+  // Multi-touch pinch tracking (viewport-level, for background touches)
   let activePointers = new Map<number, { x: number; y: number }>();
   let pinchStartDist = 0;
   let pinchStartZoom = 1.0;
 
+  // Global pinch tracking — captures ALL pointers including those on blocks
+  let gPtrs = new Map<number, { x: number; y: number }>();
+  let gPinching = false;
+  let gPinchDist = 0;
+  let gPinchZoom = 1.0;
+  let gPinchCX = 0, gPinchCY = 0;
+  // Pending scroll correction — applied after Svelte re-renders the zoomed canvas
+  let pendingScroll: { x: number; y: number } | null = null;
+
+  function applyPendingScroll() {
+    if (!pendingScroll || !viewportEl) return;
+    viewportEl.scrollLeft = pendingScroll.x;
+    viewportEl.scrollTop  = pendingScroll.y;
+    pendingScroll = null;
+  }
+
+  function onGlobalPointerDown(e: PointerEvent) {
+    gPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (gPtrs.size === 2) {
+      const pts = [...gPtrs.values()];
+      gPinchDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      gPinchZoom = zoom;
+      gPinchCX = (pts[0].x + pts[1].x) / 2;
+      gPinchCY = (pts[0].y + pts[1].y) / 2;
+      gPinching = true;
+      isPanning = false;
+    }
+  }
+
+  function onGlobalPointerMove(e: PointerEvent) {
+    if (!gPtrs.has(e.pointerId)) return;
+    gPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!gPinching || gPtrs.size < 2 || gPinchDist === 0) return;
+
+    // Stop propagation so blocks don't drag during pinch
+    e.stopPropagation();
+
+    const pts = [...gPtrs.values()];
+    const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const newZoom = clampZoom(gPinchZoom * (dist / gPinchDist));
+    if (newZoom === zoom) return;
+
+    const rect = viewportEl.getBoundingClientRect();
+    const mx = gPinchCX - rect.left;
+    const my = gPinchCY - rect.top;
+    const prevZoom = zoom;
+
+    pendingScroll = {
+      x: (viewportEl.scrollLeft + mx) / prevZoom * newZoom - mx,
+      y: (viewportEl.scrollTop  + my) / prevZoom * newZoom - my,
+    };
+    zoom = newZoom;
+    tick().then(applyPendingScroll);
+  }
+
+  function onGlobalPointerUp(e: PointerEvent) {
+    gPtrs.delete(e.pointerId);
+    if (gPtrs.size < 2) { gPinching = false; gPinchDist = 0; }
+  }
+
   // Canvas
   let canvasEl: HTMLCanvasElement;
+  let markerCanvasEl: HTMLCanvasElement;
   let viewportEl: HTMLDivElement;
   let ctx: CanvasRenderingContext2D | null = null;
+  let markerCtx: CanvasRenderingContext2D | null = null;
   let drawing = false;
   let erasePushedHistory = false; // push undo only once per erase gesture
-  let currentStroke: StrokePath | null = null;
-  const CW = 3200;
-  const CH = 2400;
+  let currentStroke: { color: string; width: number; points: [number,number][]; layer: "top" | "base" } | null = null;
 
   // ── Undo history ──────────────────────────────────────
-  type HistoryEntry =
-    | { type: "strokes"; before: StrokePath[] }
-    | { type: "block_deleted"; block: Block }
-    | { type: "block_added"; blockId: string }
-    | { type: "block_moved"; blockId: string; x: number; y: number; w: number; h: number };
-
   let historyStack: HistoryEntry[] = [];
-  const MAX_HISTORY = 50;
   $: canUndo = historyStack.length > 0;
 
   function pushHistory(entry: HistoryEntry) {
-    historyStack = [...historyStack.slice(-(MAX_HISTORY - 1)), entry];
+    historyStack = _pushHistory(historyStack, entry);
   }
 
   async function undo() {
@@ -132,6 +191,7 @@
     strokes = JSON.parse(raw || "[]");
     await new Promise(r => setTimeout(r, 0));
     ctx = canvasEl?.getContext("2d") ?? null;
+    markerCtx = markerCanvasEl?.getContext("2d") ?? null;
     redrawAll();
   }
 
@@ -151,28 +211,39 @@
   }
 
   // ── Wheel ─────────────────────────────────────────────
-  // • ctrlKey=true  → trackpad PINCH or Ctrl+scroll → zoom
-  // • ctrlKey=false → mouse wheel / trackpad two-finger scroll → native pan
-  async function onWheel(e: WheelEvent) {
-    if (!e.ctrlKey) return;
+  // Registered on window (capture phase) so we catch events even when the
+  // pointer is over a block that calls stopPropagation.
+  // • ctrlKey=true  → touchpad PINCH or Ctrl+scroll → zoom
+  // • ctrlKey=false → two-finger scroll or mouse wheel over canvas → pan
+  function onWheel(e: WheelEvent) {
+    if (!viewportEl) return;
+    const overCanvas = viewportEl.contains(e.target as Node);
+    if (!e.ctrlKey && !overCanvas) return; // non-pinch outside viewport: ignore
     e.preventDefault();
+    // Normalize: deltaMode 1 = lines (~16px), 0 = pixels
+    const factor = e.deltaMode === 1 ? 16 : 1;
+    const dx = e.deltaX * factor;
+    const dy = e.deltaY * factor;
 
-    // Capture mouse position relative to viewport BEFORE changing zoom
-    const rect = viewportEl.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const prevZoom = zoom;
-
-    // Cap delta so mouse wheel (delta ~100) and trackpad pinch (delta ~3) both feel natural
-    const capped = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 80);
-    zoom = clampZoom(prevZoom * (1 - capped * 0.005));
-
-    // Keep the content point under the cursor stationary after zoom
-    const contentX = (viewportEl.scrollLeft + mx) / prevZoom;
-    const contentY = (viewportEl.scrollTop  + my) / prevZoom;
-    await tick();
-    viewportEl.scrollLeft = contentX * zoom - mx;
-    viewportEl.scrollTop  = contentY * zoom - my;
+    if (e.ctrlKey) {
+      // Pinch (touchpad) or Ctrl+scroll → zoom keeping cursor point fixed
+      const rect = viewportEl.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const prevZoom = zoom;
+      const capped = Math.sign(dy) * Math.min(Math.abs(dy), 80);
+      const newZoom = clampZoom(prevZoom * (1 - capped * 0.005));
+      pendingScroll = {
+        x: (viewportEl.scrollLeft + mx) / prevZoom * newZoom - mx,
+        y: (viewportEl.scrollTop  + my) / prevZoom * newZoom - my,
+      };
+      zoom = newZoom;
+      tick().then(applyPendingScroll);
+    } else {
+      // Two-finger scroll → pan
+      viewportEl.scrollLeft += dx;
+      viewportEl.scrollTop  += dy;
+    }
   }
 
   // ── Pointer events: pan + pinch ───────────────────────
@@ -195,7 +266,9 @@
 
     // Shape drag-to-create: start
     if (shapeMode) {
+      (document.activeElement as HTMLElement)?.blur();
       e.preventDefault();
+      selectedBlockId = null; // deselect previous shape when starting to draw a new one
       const [cx, cy] = pointerToCanvas(e);
       shapeDragging = true;
       shapeStartX = cx;
@@ -203,9 +276,9 @@
       shapePreview = { x: cx, y: cy, w: 0, h: 0 };
       shapeEndX = cx; shapeEndY = cy;
       if (isConnectorType(shapeType)) {
-        const snap = findSnapTarget(cx, cy);
-        createStartSnapId = snap?.id ?? null;
-        if (snap) { shapeStartX = snap.x + snap.width/2; shapeStartY = snap.y + snap.height/2; }
+        const snap = findSnapTarget(cx, cy, blocks);
+        createSnapStart = snap;
+        if (snap) { shapeStartX = snap.x; shapeStartY = snap.y; }
       }
       return;
     }
@@ -225,6 +298,8 @@
     }
 
     // Auto-pan on empty canvas (hand mode)
+    // Blur any focused text editor first so it can commit before preventDefault blocks focus change
+    (document.activeElement as HTMLElement)?.blur();
     e.preventDefault();
     isPanning = true;
     panStartX = e.clientX; panStartY = e.clientY;
@@ -248,10 +323,10 @@
     if (shapeDragging && shapePreview) {
       const [cx, cy] = pointerToCanvas(e);
       if (isConnectorType(shapeType)) {
-        const snap = findSnapTarget(cx, cy);
-        createEndSnapId = snap?.id ?? null;
-        shapeEndX = snap ? snap.x + snap.width/2 : cx;
-        shapeEndY = snap ? snap.y + snap.height/2 : cy;
+        const snap = findSnapTarget(cx, cy, blocks);
+        createSnapEnd = snap;
+        shapeEndX = snap ? snap.x : cx;
+        shapeEndY = snap ? snap.y : cy;
         shapePreview = {
           x: Math.min(shapeStartX, shapeEndX), y: Math.min(shapeStartY, shapeEndY),
           w: Math.abs(shapeEndX - shapeStartX), h: Math.abs(shapeEndY - shapeStartY),
@@ -265,7 +340,7 @@
       return;
     }
 
-    if (isPanning) {
+    if (isPanning && !gPinching) {
       viewportEl.scrollLeft = panScrollX - (e.clientX - panStartX);
       viewportEl.scrollTop  = panScrollY - (e.clientY - panStartY);
     }
@@ -298,10 +373,23 @@
       const r = bandRect;
       bandRect = null;
       if (r && r.w > 8 && r.h > 8) {
-        const ids = blocks
-          .filter(b => b.x < r.x + r.w && b.x + b.width > r.x &&
-                       b.y < r.y + r.h && b.y + b.height > r.y)
-          .map(b => b.id);
+        const inRect = (x: number, y: number) =>
+          x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+        const ids = blocks.filter(b => {
+          if (b.block_type === "shape") {
+            try {
+              const d = JSON.parse(b.content);
+              if (d.shape === "line" || d.shape === "arrow") {
+                // Connector: select if either endpoint is inside the rect
+                return inRect(d.x1 ?? b.x, d.y1 ?? b.y) ||
+                       inRect(d.x2 ?? b.x + b.width, d.y2 ?? b.y + b.height);
+              }
+            } catch {}
+          }
+          // Regular block or shape: bounding box intersection
+          return b.x < r.x + r.w && b.x + b.width > r.x &&
+                 b.y < r.y + r.h && b.y + b.height > r.y;
+        }).map(b => b.id);
         selectedBlockIds = new Set(ids);
       }
       return;
@@ -314,31 +402,35 @@
       shapePreview = null;
       const MIN_SIZE = 20;
       if (isConnectorType(shapeType)) {
-        const minLen = 10;
         const len = Math.hypot(shapeEndX - shapeStartX, shapeEndY - shapeStartY);
-        if (len > minLen) {
+        if (len > 10) {
           const x1 = shapeStartX, y1 = shapeStartY, x2 = shapeEndX, y2 = shapeEndY;
           const content = JSON.stringify({
             shape: shapeType, x1, y1, x2, y2,
             stroke: shapeStroke, strokeWidth: shapeStrokeWidth,
-            startId: createStartSnapId, endId: createEndSnapId,
+            lineStyle,
+            startId: createSnapStart?.id ?? null, endId: createSnapEnd?.id ?? null,
+            startPort: createSnapStart?.port ?? "center", endPort: createSnapEnd?.port ?? "center",
           });
           const bx = Math.min(x1,x2), by = Math.min(y1,y2);
           const bw = Math.max(Math.abs(x2-x1), 10), bh = Math.max(Math.abs(y2-y1), 10);
           const block = await createBlock(pageId, "shape", bx, by, bw, bh, content);
           pushHistory({ type: "block_added", blockId: block.id });
-          maxZ = block.z_index; blocks = [...blocks, block]; selectedBlockId = block.id;
+          maxZ = block.z_index; blocks = [...blocks, block];
         }
-        createStartSnapId = null; createEndSnapId = null;
+        // Always deselect and stay in shape mode after connector
+        selectedBlockId = null;
+        createSnapStart = null; createSnapEnd = null;
       } else if (preview && preview.w > MIN_SIZE && preview.h > MIN_SIZE) {
         const content = JSON.stringify({ shape: shapeType, fill: shapeFill, stroke: shapeStroke, strokeWidth: shapeStrokeWidth, text: "", rotation: 0 });
         const block = await createBlock(pageId, "shape", preview.x, preview.y, preview.w, preview.h, content);
         pushHistory({ type: "block_added", blockId: block.id });
-        maxZ = block.z_index; blocks = [...blocks, block]; selectedBlockId = block.id;
-      } else {
-        // Small click on empty canvas = deselect + exit shape mode
+        maxZ = block.z_index; blocks = [...blocks, block];
+        // Stay in shape mode, deselect so user can draw the next shape immediately
         selectedBlockId = null;
-        shapeMode = false;
+      } else {
+        // Small click on empty canvas: just deselect, stay in shape mode
+        selectedBlockId = null;
       }
     }
   }
@@ -359,8 +451,8 @@
 
   // ── Selected shape helpers ────────────────────────────
   function parseShapeContent(s: string) {
-    try { return { shape: "rect", fill: "#6366f1", stroke: "#1e1e2e", strokeWidth: 2, text: "", rotation: 0, ...JSON.parse(s || "{}") }; }
-    catch { return { shape: "rect", fill: "#6366f1", stroke: "#1e1e2e", strokeWidth: 2, text: "", rotation: 0 }; }
+    try { return { shape: "rect", fill: "#6366f1", stroke: "#1e1e2e", strokeWidth: 2, text: "", rotation: 0, lineStyle: "solid", ...JSON.parse(s || "{}") }; }
+    catch { return { shape: "rect", fill: "#6366f1", stroke: "#1e1e2e", strokeWidth: 2, text: "", rotation: 0, lineStyle: "solid" }; }
   }
 
   $: selectedShape = selectedBlockId
@@ -370,19 +462,24 @@
   // Track which shape ID was last synced to toolbar colors (avoids loop)
   let _lastSyncedShapeId: string | null = null;
 
+  $: editingConnector = selectedShape !== null &&
+    (() => { try { const t = JSON.parse(selectedShape!.content).shape; return t === "line" || t === "arrow"; } catch { return false; } })();
+
   $: if (selectedShape) {
     const d = parseShapeContent(selectedShape.content);
     if (selectedShape.id !== _lastSyncedShapeId) {
-      // New shape selected → load its colors into toolbar and open shape mode
       _lastSyncedShapeId = selectedShape.id;
-      shapeFill        = d.fill;
+      shapeFill        = d.fill       ?? shapeFill;
       shapeStroke      = d.stroke;
       shapeStrokeWidth = d.strokeWidth;
+      lineStyle        = d.lineStyle  ?? "solid";
       shapeMode        = true;
-    } else if (d.fill !== shapeFill || d.stroke !== shapeStroke || d.strokeWidth !== shapeStrokeWidth) {
-      // User changed colors in toolbar → update the shape
+    } else if (
+      d.fill !== shapeFill || d.stroke !== shapeStroke ||
+      d.strokeWidth !== shapeStrokeWidth || (d.lineStyle ?? "solid") !== lineStyle
+    ) {
       handleBlockUpdate(selectedShape.id, {
-        content: JSON.stringify({ ...d, fill: shapeFill, stroke: shapeStroke, strokeWidth: shapeStrokeWidth })
+        content: JSON.stringify({ ...d, fill: shapeFill, stroke: shapeStroke, strokeWidth: shapeStrokeWidth, lineStyle })
       });
     }
   } else {
@@ -409,15 +506,24 @@
 
   onMount(() => {
     load();
-    viewportEl?.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("wheel", onWheel, { capture: true, passive: false });
     window.addEventListener("paste", onPaste);
     window.addEventListener("keydown", onKeyDown);
+    // Global pinch: capture phase so we see pointers even on blocks
+    window.addEventListener("pointerdown",   onGlobalPointerDown,  { capture: true });
+    window.addEventListener("pointermove",   onGlobalPointerMove,  { capture: true });
+    window.addEventListener("pointerup",     onGlobalPointerUp,    { capture: true });
+    window.addEventListener("pointercancel", onGlobalPointerUp,    { capture: true });
     ctx = canvasEl?.getContext("2d") ?? null;
     redrawAll();
     return () => {
-      viewportEl?.removeEventListener("wheel", onWheel);
+      window.removeEventListener("wheel", onWheel, { capture: true });
       window.removeEventListener("paste", onPaste);
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("pointerdown",   onGlobalPointerDown,  { capture: true });
+      window.removeEventListener("pointermove",   onGlobalPointerMove,  { capture: true });
+      window.removeEventListener("pointerup",     onGlobalPointerUp,    { capture: true });
+      window.removeEventListener("pointercancel", onGlobalPointerUp,    { capture: true });
     };
   });
 
@@ -452,28 +558,24 @@
   // ── Drawing ───────────────────────────────────────────
   function onCanvasPointerDown(e: PointerEvent) {
     if (!drawMode || !ctx) return;
-    if (!e.isPrimary && activePointers.size < 2) return; // let 2nd finger go to pinch
+    if (!e.isPrimary && activePointers.size < 2) return;
     e.preventDefault();
     canvasEl.setPointerCapture(e.pointerId);
     drawing = true;
     const [x, y] = getPos(e);
-    if (eraseMode) {
-      erasePushedHistory = false; // reset per gesture
-      eraseAt(x, y);
-      return;
-    }
-    currentStroke = { color: penColor, width: penWidth * (e.pressure || 1), points: [[x, y]] };
+    if (eraseMode) { erasePushedHistory = false; eraseAt(x, y); return; }
+    currentStroke = { color: penColor, width: penWidth * (e.pressure || 1), points: [[x, y]], layer: "top" };
   }
 
   function onCanvasPointerMove(e: PointerEvent) {
-    if (!drawing || !ctx || !drawMode) return;
+    if (!drawing || !drawMode) return;
     e.preventDefault();
     const [x, y] = getPos(e);
     if (eraseMode) { eraseAt(x, y); return; }
-    if (!currentStroke) return;
+    if (!currentStroke || !markerCtx) return;
     currentStroke.points.push([x, y]);
     redrawAll();
-    renderStroke(ctx!, currentStroke);
+    renderStroke(markerCtx, currentStroke);
   }
 
   function onCanvasPointerUp() {
@@ -489,69 +591,20 @@
     redrawAll();
   }
 
-  function getPos(e: PointerEvent): [number, number] {
-    const rect = canvasEl.getBoundingClientRect();
-    return [
-      (e.clientX - rect.left) * (CW / rect.width),
-      (e.clientY - rect.top)  * (CH / rect.height),
-    ];
-  }
+  function getPos(e: PointerEvent): [number, number] { return getCanvasPos(e, canvasEl); }
 
-  // Segment-based eraser: splits strokes at erased points instead of removing whole stroke
+  function redrawAll() { _redrawAll(ctx, markerCtx, strokes); }
+
   function eraseAt(x: number, y: number) {
-    const r = eraserSize;
-    let changed = false;
-    const result: StrokePath[] = [];
-
-    for (const stroke of strokes) {
-      const hasHit = stroke.points.some(pt => Math.hypot(pt[0] - x, pt[1] - y) < r);
-      if (!hasHit) { result.push(stroke); continue; }
-
-      changed = true;
-      // Split into sub-strokes at erased points
-      let current: [number, number][] = [];
-      for (const pt of stroke.points) {
-        if (Math.hypot(pt[0] - x, pt[1] - y) < r) {
-          if (current.length >= 2) result.push({ ...stroke, points: current });
-          current = [];
-        } else {
-          current.push([pt[0], pt[1]]);
-        }
-      }
-      if (current.length >= 2) result.push({ ...stroke, points: current });
-    }
-
-    if (!changed) return;
-
+    const result = _eraseAt(x, y, strokes, eraserSize);
+    if (!result.changed) return;
     if (!erasePushedHistory) {
       pushHistory({ type: "strokes", before: strokes });
       erasePushedHistory = true;
     }
-    strokes = result;
+    strokes = result.strokes;
     redrawAll();
     saveStrokes(pageId, JSON.stringify(strokes));
-  }
-
-  function redrawAll() {
-    if (!ctx) return;
-    ctx.clearRect(0, 0, CW, CH);
-    for (const s of strokes) renderStroke(ctx!, s);
-  }
-
-  function renderStroke(c: CanvasRenderingContext2D, s: StrokePath) {
-    if (s.points.length < 2) return;
-    c.beginPath();
-    c.strokeStyle = s.color;
-    c.lineWidth = s.width;
-    c.lineCap = "round"; c.lineJoin = "round";
-    c.moveTo(s.points[0][0], s.points[0][1]);
-    for (let i = 1; i < s.points.length - 1; i++) {
-      const mx = (s.points[i][0] + s.points[i + 1][0]) / 2;
-      const my = (s.points[i][1] + s.points[i + 1][1]) / 2;
-      c.quadraticCurveTo(s.points[i][0], s.points[i][1], mx, my);
-    }
-    c.lineTo(s.points.at(-1)![0], s.points.at(-1)![1]);
-    c.stroke();
   }
 
   // ── Blocks ────────────────────────────────────────────
@@ -561,7 +614,7 @@
   };
   const DEFAULT_CONTENT: Record<BlockType, object> = {
     note: { title: "Nueva nota", text: "" },
-    link: { url: "", title: "Nuevo enlace", link_type: "general" },
+    link: { url: "", title: "", link_type: "general" },
     file: { stored_path: "", name: "", file_type: "other", size: 0 },
     task: { tasks: [] },
     calendar: {},
@@ -577,25 +630,39 @@
     return [Math.max(0, cx), Math.max(0, cy)];
   }
 
-  function isConnectorType(t: string) { return t === "line" || t === "arrow"; }
 
-  function findSnapTarget(cx: number, cy: number, excludeId?: string): Block | null {
-    const PAD = 28; // zona de snap alrededor del bloque
-    for (const b of blocks) {
-      if (b.id === excludeId) continue;
-      if (b.block_type === "shape") {
-        try { const d = JSON.parse(b.content); if (d.shape === "line" || d.shape === "arrow") continue; } catch {}
-      }
-      if (cx >= b.x - PAD && cx <= b.x + b.width  + PAD &&
-          cy >= b.y - PAD && cy <= b.y + b.height + PAD) return b;
-    }
-    return null;
-  }
-
-  async function addBlock(type: BlockType) {
+  async function onAudioRecorded(storedPath: string, name: string, size: number) {
+    showRecordModal = false;
     const offset = (blocks.length % 8) * 28;
     const x = 80 + offset, y = 80 + offset;
-    if (type === "file") { await addFileBlock(x, y); return; }
+    const content = JSON.stringify({ stored_path: storedPath, name, file_type: "audio", size });
+    const block = await createBlock(pageId, "file", x, y, 360, 160, content);
+    pushHistory({ type: "block_added", blockId: block.id });
+    maxZ = block.z_index;
+    blocks = [...blocks, block];
+  }
+
+  async function addBlock(type: BlockType, hint?: string) {
+    const offset = (blocks.length % 8) * 28;
+    const x = 80 + offset, y = 80 + offset;
+    if (hint === "record-audio") { showRecordModal = true; return; }
+    if (type === "file") { await addFileBlock(x, y, hint); return; }
+    if (hint === "youtube") {
+      const block = await createBlock(pageId, "link", x, y, 560, 380,
+        JSON.stringify({ url: "", title: "YouTube", link_type: "youtube" }));
+      pushHistory({ type: "block_added", blockId: block.id });
+      maxZ = block.z_index;
+      blocks = [...blocks, block];
+      return;
+    }
+    if (hint === "canva") {
+      const block = await createBlock(pageId, "link", x, y, 600, 440,
+        JSON.stringify({ url: "", title: "Canva", link_type: "canva" }));
+      pushHistory({ type: "block_added", blockId: block.id });
+      maxZ = block.z_index;
+      blocks = [...blocks, block];
+      return;
+    }
     const [w, h] = DEFAULT_SIZES[type];
     const block = await createBlock(pageId, type, x, y, w, h, JSON.stringify(DEFAULT_CONTENT[type]));
     pushHistory({ type: "block_added", blockId: block.id });
@@ -603,21 +670,35 @@
     blocks = [...blocks, block];
   }
 
-  async function addFileBlock(x: number, y: number) {
-    const path = await open({
-      multiple: false,
-      filters: [
+  async function addFileBlock(x: number, y: number, hint?: string) {
+    type FilterDef = { name: string; extensions: string[] };
+    let filters: FilterDef[];
+    let defaultSize: [number, number] = DEFAULT_SIZES.file;
+
+    if (hint === "image") {
+      filters = [{ name: "Imágenes", extensions: ["jpg","jpeg","png","gif","webp","bmp","svg"] }];
+      defaultSize = [480, 360];
+    } else if (hint === "video") {
+      filters = [{ name: "Videos", extensions: ["mp4","webm","mkv","avi","mov","ogv"] }];
+      defaultSize = [560, 380];
+    } else if (hint === "audio") {
+      filters = [{ name: "Audio", extensions: ["mp3","wav","ogg","flac","m4a","aac","opus","wma"] }];
+      defaultSize = [360, 160];
+    } else {
+      filters = [
         { name: "Documentos", extensions: ["pdf","doc","docx","xls","xlsx","ppt","pptx"] },
         { name: "PDF",        extensions: ["pdf"] },
         { name: "Word",       extensions: ["doc","docx"] },
         { name: "Excel",      extensions: ["xls","xlsx"] },
         { name: "PowerPoint", extensions: ["ppt","pptx"] },
-      ],
-    });
+      ];
+    }
+
+    const path = await open({ multiple: false, filters });
     if (!path || typeof path !== "string") return;
     const appFile = await importFile(spaceId, path);
     const content = JSON.stringify({ stored_path: appFile.stored_path, name: appFile.name, file_type: appFile.file_type, size: appFile.size });
-    const [w, h] = DEFAULT_SIZES.file;
+    const [w, h] = defaultSize;
     const block = await createBlock(pageId, "file", x, y, w, h, content);
     pushHistory({ type: "block_added", blockId: block.id });
     maxZ = block.z_index;
@@ -690,7 +771,7 @@
     });
   }
 
-  async function onMultiDragEnd(e: PointerEvent) {
+  async function onMultiDragEnd(_e: PointerEvent) {
     if (!multiDragging) return;
     multiDragging = false;
     if (_multiDragRaf !== null) { cancelAnimationFrame(_multiDragRaf); _multiDragRaf = null; }
@@ -708,16 +789,20 @@
   }
 
   function updateConnectedLines(movedBlock: Block) {
-    const cx = movedBlock.x + movedBlock.width / 2;
-    const cy = movedBlock.y + movedBlock.height / 2;
     for (const b of blocks) {
       if (b.block_type !== "shape") continue;
       let d: any;
       try { d = JSON.parse(b.content); } catch { continue; }
       if (d.shape !== "line" && d.shape !== "arrow") continue;
       let changed = false;
-      if (d.startId === movedBlock.id) { d.x1 = cx; d.y1 = cy; changed = true; }
-      if (d.endId === movedBlock.id)   { d.x2 = cx; d.y2 = cy; changed = true; }
+      if (d.startId === movedBlock.id) {
+        const [px, py] = getPortCoords(movedBlock, d.startPort ?? "center");
+        d.x1 = px; d.y1 = py; changed = true;
+      }
+      if (d.endId === movedBlock.id) {
+        const [px, py] = getPortCoords(movedBlock, d.endPort ?? "center");
+        d.x2 = px; d.y2 = py; changed = true;
+      }
       if (!changed) continue;
       const newContent = JSON.stringify(d);
       const nx = Math.min(d.x1, d.x2), ny = Math.min(d.y1, d.y2);
@@ -733,12 +818,66 @@
     strokes = []; redrawAll(); saveStrokes(pageId, "[]");
   }
 
+  // ── Double-click to type ───────────────────────────────
+  let textDraft: { x: number; y: number } | null = null;
+  let textDraftEl: HTMLDivElement;
+  let _draftHandled = false; // prevent double-confirm when Escape removes element
+
+  async function onViewportDblClick(e: MouseEvent) {
+    if (drawMode || shapeMode || selectMode) return;
+    if (!isCanvasBg(e.target)) return;
+    e.preventDefault();
+    selectedBlockId = null;
+    const rect = viewportEl.getBoundingClientRect();
+    const cx = (e.clientX - rect.left + viewportEl.scrollLeft) / zoom;
+    const cy = (e.clientY - rect.top  + viewportEl.scrollTop)  / zoom;
+    textDraft = { x: cx, y: cy };
+    await tick();
+    textDraftEl?.focus();
+  }
+
+  function onTextDraftKey(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      _draftHandled = true;
+      textDraft = null;
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      textDraftEl?.blur();
+    }
+  }
+
+  async function onTextDraftBlur() {
+    if (_draftHandled) { _draftHandled = false; return; }
+    const text = textDraftEl?.innerText?.trim() ?? "";
+    const pos = textDraft;
+    _draftHandled = true;
+    textDraft = null;
+    if (!text || !pos) return;
+    // Estimate size from text length (rough heuristic)
+    const lines = text.split("\n");
+    const maxLen = Math.max(...lines.map(l => l.length));
+    const w = Math.max(80, Math.min(maxLen * 10, 600));
+    const h = Math.max(40, lines.length * 26 + 16);
+    const bx = Math.max(0, pos.x - w / 2);
+    const by = Math.max(0, pos.y - h / 2);
+    // Create a transparent shape — moveable, resizable, editable on dblclick
+    const content = JSON.stringify({
+      shape: "rect", fill: "transparent", stroke: "transparent",
+      strokeWidth: 0, text, rotation: 0,
+    });
+    const block = await createBlock(pageId, "shape", bx, by, w, h, content);
+    pushHistory({ type: "block_added", blockId: block.id });
+    maxZ = block.z_index;
+    blocks = [...blocks, block];
+    selectedBlockId = block.id;
+  }
+
   // Cursor for canvas area
   $: canvasBgCursor = drawMode
     ? (eraseMode ? "none" : "crosshair")
     : shapeMode ? "crosshair"
     : selectMode ? "crosshair"
-    : (isPanning ? "grabbing" : "grab");
+    : "move";
 </script>
 
 <!-- Eraser circle indicator (fixed, follows mouse, outside scaled canvas) -->
@@ -746,7 +885,7 @@
   <div
     class="eraser-indicator"
     style="left:{eraserScreenX}px; top:{eraserScreenY}px; width:{eraserScreenR * 2}px; height:{eraserScreenR * 2}px;"
-  />
+  ></div>
 {/if}
 
 <div class="page-root">
@@ -759,6 +898,8 @@
     on:pointerup={onViewportPointerUp}
     on:pointercancel={onViewportPointerCancel}
     on:mouseleave={onViewportMouseLeave}
+    on:dblclick={onViewportDblClick}
+    role="presentation"
   >
     <div class="canvas-scaler" style="width:{CW * zoom}px; height:{CH * zoom}px">
       <div class="canvas-content" style="width:{CW}px; height:{CH}px; transform:scale({zoom}); transform-origin:top left">
@@ -772,15 +913,21 @@
           on:pointermove={onCanvasPointerMove}
           on:pointerup={onCanvasPointerUp}
           style="cursor:{drawMode ? (eraseMode ? 'none' : 'crosshair') : 'default'}"
-        />
+        ></canvas>
+
+        <canvas
+          class="marker-canvas"
+          width={CW} height={CH}
+          bind:this={markerCanvasEl}
+        ></canvas>
 
         <!-- Connector (line/arrow) drag preview -->
         {#if shapeDragging && isConnectorType(shapeType) && Math.hypot(shapeEndX-shapeStartX, shapeEndY-shapeStartY) > 4}
-          <svg class="connector-preview-svg" style="position:absolute;left:0;top:0;width:{CW}px;height:{CH}px;overflow:visible;pointer-events:none;z-index:998;">
+          <svg style="position:absolute;left:0;top:0;width:{CW}px;height:{CH}px;overflow:visible;pointer-events:none;z-index:998;">
             <defs>
               {#if shapeType === "arrow"}
-                <marker id="prev-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                  <polygon points="0 0, 10 3.5, 0 7" fill={shapeStroke} />
+                <marker id="prev-arrow" markerWidth="6" markerHeight="4" refX="6" refY="2" orient="auto" markerUnits="strokeWidth">
+                  <polygon points="0 0, 6 2, 0 4" fill={shapeStroke} />
                 </marker>
               {/if}
             </defs>
@@ -788,21 +935,13 @@
                   stroke={shapeStroke} stroke-width={shapeStrokeWidth}
                   stroke-linecap="round" stroke-dasharray="8 5"
                   marker-end={shapeType === "arrow" ? "url(#prev-arrow)" : ""} />
-            <!-- Start snap highlight -->
-            {#if createStartSnapId}
-              {@const snap = blocks.find(b => b.id === createStartSnapId)}
-              {#if snap}
-                <circle cx={snap.x + snap.width/2} cy={snap.y + snap.height/2} r="18"
-                        fill="none" stroke={shapeStroke} stroke-width="2" stroke-dasharray="5 3" opacity="0.7" />
-              {/if}
+            {#if createSnapStart}
+              <circle cx={createSnapStart.x} cy={createSnapStart.y} r="10"
+                      fill="rgba(99,102,241,0.15)" stroke="var(--accent)" stroke-width="2" />
             {/if}
-            <!-- End snap highlight -->
-            {#if createEndSnapId}
-              {@const snap = blocks.find(b => b.id === createEndSnapId)}
-              {#if snap}
-                <circle cx={snap.x + snap.width/2} cy={snap.y + snap.height/2} r="18"
-                        fill="none" stroke={shapeStroke} stroke-width="2" stroke-dasharray="5 3" opacity="0.7" />
-              {/if}
+            {#if createSnapEnd}
+              <circle cx={createSnapEnd.x} cy={createSnapEnd.y} r="10"
+                      fill="rgba(99,102,241,0.15)" stroke="var(--accent)" stroke-width="2" />
             {/if}
           </svg>
         {/if}
@@ -819,6 +958,8 @@
                 <path d="M50,4 L96,88 L4,88 Z" fill={shapeFill} stroke={shapeStroke} stroke-width="3" stroke-linejoin="round" opacity="0.55" />
               {:else if shapeType === "diamond"}
                 <path d="M50,4 L96,50 L50,96 L4,50 Z" fill={shapeFill} stroke={shapeStroke} stroke-width="3" stroke-linejoin="round" opacity="0.55" />
+              {:else if shapeType === "heart"}
+                <path d="M50,82 C50,82 8,57 8,33 C8,18 18,8 33,8 C41,8 47,12 50,18 C53,12 59,8 67,8 C82,8 92,18 92,33 C92,57 50,82 50,82 Z" fill={shapeFill} stroke={shapeStroke} stroke-width="3" stroke-linejoin="round" opacity="0.55" />
               {/if}
             </svg>
           </div>
@@ -828,7 +969,7 @@
         {#if bandRect && bandRect.w > 4 && bandRect.h > 4}
           <div class="band-select"
             style="left:{bandRect.x}px; top:{bandRect.y}px; width:{bandRect.w}px; height:{bandRect.h}px;"
-          />
+          ></div>
         {/if}
 
         <!-- Multi-select drag overlay -->
@@ -846,7 +987,7 @@
               on:pointerup={onMultiDragEnd}
               on:pointercancel={onMultiDragEnd}
               role="presentation"
-            />
+            ></div>
           {/if}
         {/if}
 
@@ -878,9 +1019,35 @@
             />
           {/if}
         {/each}
+
+        <!-- Inline text draft (double-click to type) -->
+        {#if textDraft !== null}
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div
+            class="canvas-text-draft"
+            style="left:{textDraft.x}px; top:{textDraft.y}px;"
+            contenteditable="true"
+            role="textbox"
+            tabindex="0"
+            aria-label="Escribe texto"
+            data-placeholder="Escribe algo…"
+            bind:this={textDraftEl}
+            on:blur={onTextDraftBlur}
+            on:keydown={onTextDraftKey}
+          ></div>
+        {/if}
+
       </div>
     </div>
   </div>
+
+  {#if showRecordModal}
+    <RecordAudioModal
+      {spaceId}
+      onSave={onAudioRecorded}
+      onClose={() => showRecordModal = false}
+    />
+  {/if}
 
   <CanvasToolbar
     bind:drawMode
@@ -895,8 +1062,10 @@
     bind:zoom
     bind:eraserSize
     bind:selectMode
+    bind:lineStyle
     {canUndo}
     editingShape={selectedShape !== null}
+    {editingConnector}
     onAddBlock={addBlock}
     onClearStrokes={clearStrokes}
     onUndo={undo}
@@ -913,8 +1082,8 @@
     background-size: 28px 28px;
     /* Hide scrollbars */
     scrollbar-width: none;
-    /* Prevent native browser touch zoom/scroll so we handle it ourselves */
-    touch-action: none;
+    /* overscroll bounce prevention */
+    overscroll-behavior: none;
   }
   .canvas-viewport::-webkit-scrollbar { display: none; }
 
@@ -925,7 +1094,12 @@
     position: absolute; inset: 0;
     z-index: 0; pointer-events: none; touch-action: none;
   }
-  .drawing-canvas.draw-active { z-index: 100; pointer-events: all; }
+  .drawing-canvas.draw-active { z-index: 9991; pointer-events: all; }
+
+  .marker-canvas {
+    position: absolute; inset: 0;
+    z-index: 9990; pointer-events: none; touch-action: none;
+  }
 
   /* Shape drag preview */
   .shape-drag-preview {
@@ -944,12 +1118,39 @@
 
   /* Multi-select drag overlay */
   .multi-drag-overlay {
-    position: absolute; cursor: grab;
+    position: absolute; cursor: move;
     border: 2px dashed var(--accent);
     background: rgba(99,102,241,0.05);
     border-radius: 8px;
   }
-  .multi-drag-overlay:active { cursor: grabbing; }
+
+  /* Inline text draft (double-click to type) */
+  .canvas-text-draft {
+    position: absolute;
+    min-width: 120px; min-height: 32px;
+    max-width: 600px;
+    padding: 8px 14px;
+    background: var(--bg-surface);
+    border: 1.5px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    font-size: 14px; font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.5;
+    outline: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+    cursor: text;
+    z-index: 9995;
+    /* Center on click point */
+    transform: translate(-50%, -50%);
+    /* Grow with content (contenteditable auto-sizes) */
+  }
+  .canvas-text-draft:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+    pointer-events: none;
+  }
 
   /* Eraser circle indicator */
   .eraser-indicator {

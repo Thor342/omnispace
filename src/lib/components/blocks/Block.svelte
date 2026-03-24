@@ -18,6 +18,11 @@
   export let onSelect: (id: string) => void = () => {};
   export let multiSelected: boolean = false;
 
+  // ── File subtype (for audio/etc transparent styling) ──
+  $: fileSubtype = block.block_type === "file"
+    ? (() => { try { return JSON.parse(block.content || "{}").file_type ?? ""; } catch { return ""; } })()
+    : "";
+
   // ── Local geometry ───────────────────────────────────
   let lx = block.x, ly = block.y, lw = block.width, lh = block.height;
 
@@ -53,19 +58,8 @@
 
   $: displayLabel = customLabel || blockLabel;
 
-  // ── Delete confirmation ───────────────────────────────
-  let confirmingDelete = false;
-  let confirmTimer: ReturnType<typeof setTimeout> | null = null;
-
   function requestDelete() {
-    if (confirmingDelete) {
-      if (confirmTimer) clearTimeout(confirmTimer);
-      confirmingDelete = false;
-      onDelete(block.id);
-    } else {
-      confirmingDelete = true;
-      confirmTimer = setTimeout(() => { confirmingDelete = false; }, 3000);
-    }
+    onDelete(block.id);
   }
 
   // ── Expand (fullscreen) ───────────────────────────────
@@ -203,6 +197,7 @@
   class:selected
   class:multi-selected={multiSelected}
   data-type={block.block_type}
+  data-subtype={fileSubtype}
   style="transform:translate({lx}px,{ly}px); width:{lw}px; height:{displayH}px; z-index:{block.z_index}; opacity:{minimized ? 0.65 : 1}"
   on:pointerdown={() => { if (!drawMode) { onSelect(block.id); onBringToFront(block.id); } }}
 >
@@ -233,19 +228,13 @@
     {/if}
 
     <!-- Expand button (always visible, all block types) -->
-    <button class="hdr-btn expand-btn" on:click|stopPropagation={() => expanded = true} title="Expandir">⛶</button>
+    <button class="hdr-btn expand-btn" on:pointerdown|stopPropagation on:click|stopPropagation={() => expanded = true} title="Expandir">⛶</button>
 
-    <button class="hdr-btn" on:click|stopPropagation={toggleMinimize} title={minimized ? "Restaurar" : "Minimizar"}>
+    <button class="hdr-btn" on:pointerdown|stopPropagation on:click|stopPropagation={toggleMinimize} title={minimized ? "Restaurar" : "Minimizar"}>
       {minimized ? "□" : "—"}
     </button>
 
-    {#if confirmingDelete}
-      <span class="confirm-label">¿Eliminar?</span>
-      <button class="hdr-btn confirm-yes" on:click|stopPropagation={requestDelete} title="Confirmar">✓</button>
-      <button class="hdr-btn confirm-no"  on:click|stopPropagation={() => { confirmingDelete = false; }} title="Cancelar">✗</button>
-    {:else}
-      <button class="hdr-btn close" on:click|stopPropagation={requestDelete} title="Eliminar">×</button>
-    {/if}
+    <button class="hdr-btn close" on:pointerdown|stopPropagation on:click|stopPropagation={requestDelete} title="Eliminar">×</button>
   </div>
 
   <!-- Content -->
@@ -274,7 +263,8 @@
   {/if}
 
   {#if !minimized}
-    <div class="resize-handle" on:pointerdown={onResizePointerDown} />
+    {@const hs = Math.min(48, Math.max(20, Math.round(24 / zoom)))}
+    <div class="resize-handle" style="width:{hs}px;height:{hs}px" on:pointerdown={onResizePointerDown} />
   {/if}
 </div>
 
@@ -304,7 +294,6 @@
   .block.minimized {
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     border-radius: 10px;
-    transform: none;
   }
   .block.selected {
     border-color: var(--accent);
@@ -358,11 +347,6 @@
   .hdr-btn.close:hover { color: #ef4444; background: rgba(239,68,68,0.12); }
   .hdr-btn.expand-btn { font-size: 12px; }
 
-  .confirm-label { font-size: 10px; font-weight: 700; color: #ef4444; white-space: nowrap; opacity: 1; }
-  .confirm-yes { opacity: 1; color: #ef4444; }
-  .confirm-yes:hover { background: rgba(239,68,68,0.15); }
-  .confirm-no  { opacity: 1; }
-  .confirm-no:hover { background: var(--bg-hover); color: var(--text-primary); }
 
   /* ── Body ── */
   .block-body {
@@ -375,14 +359,15 @@
 
   .resize-handle {
     position: absolute; bottom: 0; right: 0;
-    width: 18px; height: 18px; cursor: se-resize;
-    background: linear-gradient(135deg, transparent 50%, rgba(99,102,241,0.25) 50%);
+    /* size set via inline style (scales with 1/zoom for consistent screen size) */
+    cursor: se-resize;
+    background: linear-gradient(135deg, transparent 55%, rgba(99,102,241,0.3) 55%);
     border-radius: 0 0 14px 0;
     touch-action: none;
     transition: background 0.15s;
   }
   .resize-handle:hover {
-    background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
+    background: linear-gradient(135deg, transparent 55%, var(--accent) 55%);
   }
 
   /* ── Per-type header theming ── */
@@ -457,6 +442,36 @@
     background: var(--bg-overlay);
     border-bottom-color: rgba(0,0,0,0.08);
   }
+
+  /* ── Audio file: transparent block, floating header ── */
+  [data-type="file"][data-subtype="audio"] {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  [data-type="file"][data-subtype="audio"]:hover {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  [data-type="file"][data-subtype="audio"].dragging { box-shadow: none; }
+  [data-type="file"][data-subtype="audio"].selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-dim);
+  }
+  [data-type="file"][data-subtype="audio"] .block-header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+    background: transparent; border: none; height: 32px;
+    opacity: 0; transition: opacity 0.2s;
+  }
+  [data-type="file"][data-subtype="audio"]:hover .block-header {
+    opacity: 1;
+    background: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, transparent 100%);
+  }
+  [data-type="file"][data-subtype="audio"] .block-header .block-label { color: rgba(255,255,255,0.7); }
+  [data-type="file"][data-subtype="audio"] .block-header .hdr-btn { color: rgba(255,255,255,0.6); }
+  [data-type="file"][data-subtype="audio"] .block-header .hdr-btn:hover { color: #fff; background: rgba(255,255,255,0.12); }
+  [data-type="file"][data-subtype="audio"] .resize-handle { opacity: 0; transition: opacity 0.2s; }
+  [data-type="file"][data-subtype="audio"]:hover .resize-handle { opacity: 1; }
 
   [data-type="task"] .block-header {
     background: linear-gradient(90deg, rgba(34,197,94,0.08), var(--bg-overlay));

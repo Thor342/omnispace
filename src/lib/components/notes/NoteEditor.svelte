@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { marked } from "marked";
+  import DOMPurify from "dompurify";
   import { getNotes, createNote, updateNote, deleteNote } from "../../api";
   import type { Note } from "../../types";
 
@@ -63,7 +64,7 @@
   }
 
   $: renderedMd = preview && editContent
-    ? (marked.parse(editContent) as string)
+    ? DOMPurify.sanitize(marked.parse(editContent) as string)
     : "";
 </script>
 

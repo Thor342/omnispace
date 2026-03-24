@@ -14,10 +14,12 @@
   export let zoom = 1.0;
   export let canUndo = false;
   export let selectMode = false;
-  export let onAddBlock: (type: BlockType) => void;
+  export let onAddBlock: (type: BlockType, hint?: string) => void;
   export let onClearStrokes: () => void;
   export let onUndo: () => void;
-  export let editingShape: boolean = false; // true when editing an existing selected shape
+  export let editingShape: boolean = false;
+  export let editingConnector: boolean = false;
+  export let lineStyle: "solid" | "dashed" | "dotted" = "solid";
 
   let showAddMenu = false;
   let addBtnEl: HTMLElement;
@@ -33,7 +35,7 @@
     showAddMenu = !showAddMenu;
   }
 
-  const PEN_COLORS   = ["#e8e8f0","#6366f1","#ec4899","#f59e0b","#22c55e","#ef4444","#14b8a6","#f97316","#000000"];
+  const PEN_COLORS    = ["#e8e8f0","#6366f1","#ec4899","#f59e0b","#22c55e","#ef4444","#14b8a6","#f97316","#000000"];
   const FILL_COLORS  = ["#ffffff","#f3f4f6","#fef9c3","#dbeafe","#dcfce7","#fce7f3","#6366f1","#ec4899","#1e1e2e","transparent"];
   const STROKE_COLORS= ["#1e1e2e","#6366f1","#ec4899","#f59e0b","#22c55e","#ef4444","#14b8a6","#9ca3af","#ffffff"];
   const ERASER_SIZES = [
@@ -47,18 +49,24 @@
     { type: "circle",   icon: "◯" },
     { type: "triangle", icon: "△" },
     { type: "diamond",  icon: "◇" },
+    { type: "heart",    icon: "♥" },
     { type: "line",     icon: "╱" },
     { type: "arrow",    icon: "→" },
   ];
 
-  const BLOCKS: { type: BlockType; icon: string; label: string }[] = [
+  const BLOCKS: { type: BlockType; hint?: string; icon: string; label: string; sep?: boolean }[] = [
     { type: "note",     icon: "📝", label: "Nota" },
     { type: "link",     icon: "🔗", label: "Enlace" },
-    { type: "file",     icon: "📄", label: "Documento" },
+    { type: "file",     hint: "image",    icon: "🖼️", label: "Imagen" },
+    { type: "file",     hint: "video",    icon: "🎬", label: "Video" },
+    { type: "file",     hint: "audio",    icon: "🎵", label: "Audio" },
+    { type: "file",     hint: "document", icon: "📄", label: "Documento" },
     { type: "task",     icon: "✅", label: "Tareas" },
     { type: "calendar", icon: "📅", label: "Calendario" },
     { type: "clock",    icon: "🕐", label: "Reloj" },
-    // "shape" se añade desde el modo ◻ Figuras, no desde aquí
+    { type: "file", hint: "record-audio", icon: "🎙", label: "Grabar audio", sep: true },
+    { type: "link", hint: "youtube", icon: `<svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="5" fill="#FF0000"/><polygon points="9.5,7 9.5,17 17.5,12" fill="#fff"/></svg>`, label: "YouTube", sep: true },
+    { type: "link", hint: "canva",   icon: `<svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="#7D2AE8"/><path d="M15.5 8.5c-.6-.6-1.5-1-2.5-1-2.2 0-4 1.8-4 4s1.8 4 4 4c1 0 1.9-.4 2.5-1" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`, label: "Canva" },
   ];
 
   function setZoom(z: number) { zoom = Math.round(Math.min(3, Math.max(0.2, z)) * 100) / 100; }
@@ -71,8 +79,9 @@
   <div class="overlay" on:click={() => showAddMenu = false} role="presentation" />
   <div class="add-menu" style="bottom:{menuBottom}px; left:{menuLeft}px;">
     {#each BLOCKS as b}
-      <button class="menu-item" on:click={() => { onAddBlock(b.type); showAddMenu = false; }}>
-        <span>{b.icon}</span><span>{b.label}</span>
+      {#if b.sep}<div class="menu-sep" />{/if}
+      <button class="menu-item" class:menu-item-canva={b.hint === 'canva'} class:menu-item-youtube={b.hint === 'youtube'} on:click={() => { onAddBlock(b.type, b.hint); showAddMenu = false; }}>
+        <span class="menu-icon">{@html b.icon}</span><span>{b.label}</span>
       </button>
     {/each}
   </div>
@@ -91,19 +100,13 @@
       title="Borrador">◻ Borrador</button>
 
     {#if eraseMode}
-      <!-- Eraser size presets -->
       <div class="sep" />
       <span class="lbl">Tamaño:</span>
       {#each ERASER_SIZES as es}
-        <button
-          class="size-btn"
-          class:active={eraserSize === es.size}
-          on:click={() => eraserSize = es.size}
-          title="Borrador {es.label}"
-        >{es.label}</button>
+        <button class="size-btn" class:active={eraserSize === es.size}
+          on:click={() => eraserSize = es.size} title="Borrador {es.label}">{es.label}</button>
       {/each}
     {:else}
-      <!-- Pen color + width -->
       <div class="sep" />
       <div class="color-row">
         {#each PEN_COLORS as c}
@@ -173,6 +176,15 @@
     <input type="range" min="1" max="12" bind:value={shapeStrokeWidth} class="stroke-range" />
     <span class="lbl">{shapeStrokeWidth}px</span>
 
+    <!-- Line style: shown for connectors and when creating line/arrow -->
+    {#if shapeType === "line" || shapeType === "arrow" || editingConnector}
+      <div class="sep" />
+      <span class="lbl">Línea:</span>
+      <button class="style-btn" class:active={lineStyle === "solid"}  on:click={() => lineStyle = "solid"}  title="Sólida">—</button>
+      <button class="style-btn" class:active={lineStyle === "dashed"} on:click={() => lineStyle = "dashed"} title="Guiones">╌</button>
+      <button class="style-btn" class:active={lineStyle === "dotted"} on:click={() => lineStyle = "dotted"} title="Puntos">···</button>
+    {/if}
+
   {:else}
     <!-- ── Normal mode ── -->
     <button class="tool-btn" class:active={!selectMode} on:click={() => selectMode = false} title="Mano: arrastrar lienzo">🖐</button>
@@ -183,7 +195,7 @@
     </button>
     <div class="sep" />
 
-    <button class="tool-btn" on:click={() => drawMode = true} title="Modo lápiz: dibuja sobre el canvas">
+    <button class="tool-btn" on:click={() => { drawMode = true; }} title="Modo lápiz: dibuja detrás de los bloques">
       ✏️ Lápiz
     </button>
     <button class="tool-btn" class:active={shapeMode} on:click={() => { shapeMode = true; }} title="Modo figuras: coloca figuras geométricas en el canvas">
@@ -232,7 +244,6 @@
 
   .sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
   .lbl { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-  .lbl.hint { font-style: italic; opacity: 0.7; }
   .editing-lbl { color: var(--accent); font-weight: 600; }
   .shape-type-btn { font-size: 16px; padding: 3px 9px; }
 
@@ -247,6 +258,16 @@
   }
   .color-pick-input::-webkit-color-swatch-wrapper { padding: 0; }
   .color-pick-input::-webkit-color-swatch { border: none; border-radius: 50%; }
+
+  /* Line style buttons */
+  .style-btn {
+    padding: 3px 10px; border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 600; letter-spacing: 1px;
+    color: var(--text-muted); background: var(--bg-overlay); border: 1px solid var(--border);
+    transition: all var(--transition);
+  }
+  .style-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+  .style-btn.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
 
   /* Eraser size buttons */
   .size-btn {
@@ -277,6 +298,9 @@
     border-radius: var(--radius-md); padding: 6px; min-width: 180px;
     z-index: 50; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   }
+  .menu-sep {
+    height: 1px; background: var(--border); margin: 4px 0;
+  }
   .menu-item {
     display: flex; align-items: center; gap: 10px;
     width: 100%; padding: 8px 12px; border-radius: var(--radius-sm);
@@ -284,6 +308,11 @@
     transition: background var(--transition);
   }
   .menu-item:hover { background: var(--bg-hover); }
+  .menu-item-canva { color: #7d2ae8; }
+  .menu-item-canva:hover { background: rgba(125,42,232,0.1); }
+  .menu-item-youtube { color: #ff0000; }
+  .menu-item-youtube:hover { background: rgba(255,0,0,0.08); }
+  .menu-icon { display: flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex-shrink: 0; }
 
   /* Zoom */
   .zoom-group {
