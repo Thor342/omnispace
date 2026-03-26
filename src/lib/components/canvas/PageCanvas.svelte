@@ -704,21 +704,36 @@
   }
 
   async function addBlock(type: BlockType, hint?: string) {
-    const offset = (blocks.length % 8) * 28;
-    // Center on current viewport position
-    const vx = viewportEl ? (viewportEl.scrollLeft + viewportEl.clientWidth  / 2) / zoom : 300;
-    const vy = viewportEl ? (viewportEl.scrollTop  + viewportEl.clientHeight / 2) / zoom : 300;
+    // Stagger en pantalla: 28px independiente del zoom
+    const screenOffset = (blocks.length % 8) * 28;
+    const offset = screenOffset / zoom;
+    // Centro del viewport actual en coordenadas de canvas
+    const vx = viewportEl ? (viewportEl.scrollLeft + viewportEl.clientWidth  / 2) / zoom : CW / 2;
+    const vy = viewportEl ? (viewportEl.scrollTop  + viewportEl.clientHeight / 2) / zoom : CH / 2;
+
+    function clampPos(x: number, y: number, w: number, h: number): [number, number] {
+      return [
+        Math.max(20, Math.min(CW - w - 20, x)),
+        Math.max(20, Math.min(CH - h - 20, y)),
+      ];
+    }
+
+    // Convierte tamaño en pantalla → canvas-space (tamaño visual constante a cualquier zoom)
+    function sz(screenW: number, screenH: number): [number, number] {
+      return [Math.round(screenW / zoom), Math.round(screenH / zoom)];
+    }
 
     if (hint === "record-audio") { showRecordModal = true; return; }
     if (hint === "record-video") { showVideoModal = true; return; }
     if (type === "file") {
-      const [fw, fh] = DEFAULT_SIZES.file;
-      await addFileBlock(Math.max(20, vx - fw/2 + offset), Math.max(20, vy - fh/2 + offset), hint);
+      const [fw, fh] = sz(...DEFAULT_SIZES.file);
+      const [fx, fy] = clampPos(vx - fw/2 + offset, vy - fh/2 + offset, fw, fh);
+      await addFileBlock(fx, fy, zoom, hint);
       return;
     }
     if (hint === "youtube") {
-      const [w, h] = [560, 380];
-      const x = Math.max(20, vx - w/2 + offset), y = Math.max(20, vy - h/2 + offset);
+      const [w, h] = sz(560, 380);
+      const [x, y] = clampPos(vx - w/2 + offset, vy - h/2 + offset, w, h);
       const block = await createBlock(pageId, "link", x, y, w, h,
         JSON.stringify({ url: "", title: "", link_type: "youtube" }));
       pushHistory({ type: "block_added", blockId: block.id });
@@ -727,8 +742,8 @@
       return;
     }
     if (hint === "canva") {
-      const [w, h] = [600, 440];
-      const x = Math.max(20, vx - w/2 + offset), y = Math.max(20, vy - h/2 + offset);
+      const [w, h] = sz(600, 440);
+      const [x, y] = clampPos(vx - w/2 + offset, vy - h/2 + offset, w, h);
       const block = await createBlock(pageId, "link", x, y, w, h,
         JSON.stringify({ url: "", title: "", link_type: "canva" }));
       pushHistory({ type: "block_added", blockId: block.id });
@@ -736,28 +751,28 @@
       blocks = [...blocks, block];
       return;
     }
-    const [w, h] = DEFAULT_SIZES[type];
-    const x = Math.max(20, vx - w/2 + offset), y = Math.max(20, vy - h/2 + offset);
+    const [w, h] = sz(...DEFAULT_SIZES[type]);
+    const [x, y] = clampPos(vx - w/2 + offset, vy - h/2 + offset, w, h);
     const block = await createBlock(pageId, type, x, y, w, h, JSON.stringify(DEFAULT_CONTENT[type]));
     pushHistory({ type: "block_added", blockId: block.id });
     maxZ = block.z_index;
     blocks = [...blocks, block];
   }
 
-  async function addFileBlock(x: number, y: number, hint?: string) {
+  async function addFileBlock(x: number, y: number, z: number, hint?: string) {
     type FilterDef = { name: string; extensions: string[] };
     let filters: FilterDef[];
-    let defaultSize: [number, number] = DEFAULT_SIZES.file;
+    let screenSize: [number, number] = DEFAULT_SIZES.file;
 
     if (hint === "image") {
       filters = [{ name: $t.canvas.images, extensions: ["jpg","jpeg","png","gif","webp","bmp","svg"] }];
-      defaultSize = [480, 360];
+      screenSize = [480, 360];
     } else if (hint === "video") {
       filters = [{ name: $t.canvas.videos, extensions: ["mp4","webm","mkv","avi","mov","ogv"] }];
-      defaultSize = [560, 380];
+      screenSize = [560, 380];
     } else if (hint === "audio") {
       filters = [{ name: $t.canvas.audioFiles, extensions: ["mp3","wav","ogg","flac","m4a","aac","opus","wma"] }];
-      defaultSize = [360, 160];
+      screenSize = [360, 160];
     } else {
       filters = [
         { name: $t.canvas.documents, extensions: ["pdf","doc","docx","xls","xlsx","ppt","pptx"] },
@@ -772,7 +787,8 @@
     if (!path || typeof path !== "string") return;
     const appFile = await importFile(spaceId, path);
     const content = JSON.stringify({ stored_path: appFile.stored_path, name: appFile.name, file_type: appFile.file_type, size: appFile.size });
-    const [w, h] = defaultSize;
+    const w = Math.round(screenSize[0] / z);
+    const h = Math.round(screenSize[1] / z);
     const block = await createBlock(pageId, "file", x, y, w, h, content);
     pushHistory({ type: "block_added", blockId: block.id });
     maxZ = block.z_index;

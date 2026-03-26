@@ -124,8 +124,11 @@
 
   function onResizeMove(e: PointerEvent) {
     if (!resizing) return;
-    lw = Math.max(220, resSW + (e.clientX - resSX) / zoom);
-    lh = Math.max(140, resSH + (e.clientY - resSY) / zoom);
+    // Minimum block size fixed in screen-space (~100×80px on screen at any zoom)
+    const minW = Math.round(100 / zoom);
+    const minH = Math.round(80  / zoom);
+    lw = Math.max(minW, resSW + (e.clientX - resSX) / zoom);
+    lh = Math.max(minH, resSH + (e.clientY - resSY) / zoom);
   }
 
   function onResizeEnd() {
@@ -173,7 +176,7 @@
       </div>
       <div class="expand-body">
         {#if block.block_type === "file"}
-          <FileBlock content={localContent} onUpdate={handleContentChange} />
+          <FileBlock content={localContent} onUpdate={handleContentChange} {zoom} />
         {:else if block.block_type === "note"}
           <NoteBlock content={localContent} onContentChange={handleContentChange} />
         {:else if block.block_type === "link"}
@@ -202,7 +205,7 @@
   class:multi-selected={multiSelected}
   data-type={block.block_type}
   data-subtype={fileSubtype}
-  style="transform:translate({lx}px,{ly}px); width:{lw}px; height:{displayH}px; z-index:{block.z_index}; opacity:{minimized ? 0.65 : 1}"
+  style="transform:translate({lx}px,{ly}px); width:{lw}px; height:{displayH}px; z-index:{block.z_index}; opacity:{minimized ? 0.65 : 1}; --s:{1/zoom}"
   on:pointerdown={() => { if (!drawMode && !connectorMode) { onSelect(block.id); onBringToFront(block.id); } }}
 >
   <!-- Header -->
@@ -253,11 +256,11 @@
       {:else if block.block_type === "link"}
         <LinkBlock content={localContent} onContentChange={handleContentChange} />
       {:else if block.block_type === "file"}
-        <FileBlock content={localContent} onUpdate={handleContentChange} />
+        <FileBlock content={localContent} onUpdate={handleContentChange} {zoom} />
       {:else if block.block_type === "task"}
         <TaskBlock content={localContent} onContentChange={handleContentChange} />
       {:else if block.block_type === "calendar"}
-        <CalendarBlock content={localContent} onContentChange={handleContentChange} />
+        <CalendarBlock content={localContent} onContentChange={handleContentChange} {zoom} />
       {:else if block.block_type === "clock"}
         <ClockBlock content={localContent} onContentChange={handleContentChange} />
       {:else if block.block_type === "shape"}
@@ -267,7 +270,7 @@
   {/if}
 
   {#if !minimized}
-    {@const hs = Math.min(48, Math.max(20, Math.round(24 / zoom)))}
+    {@const hs = Math.round(20 / zoom)}
     <div class="resize-handle" style="width:{hs}px;height:{hs}px" on:pointerdown={onResizePointerDown} />
   {/if}
 </div>
@@ -279,7 +282,7 @@
     display: flex; flex-direction: column;
     background: var(--bg-surface);
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: calc(14px * var(--s, 1));
     box-shadow: 0 4px 20px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.1);
     overflow: hidden;
     transition: border-color 0.15s;
@@ -313,8 +316,8 @@
 
   /* ── Header ── */
   .block-header {
-    display: flex; align-items: center; gap: 6px;
-    padding: 0 10px; height: 34px;
+    display: flex; align-items: center; gap: calc(6px * var(--s, 1));
+    padding: 0 calc(10px * var(--s, 1)); height: calc(34px * var(--s, 1));
     background: var(--bg-overlay);
     border-bottom: 1px solid var(--border);
     cursor: grab; flex-shrink: 0; user-select: none;
@@ -322,10 +325,10 @@
   }
   .block-header:active { cursor: grabbing; }
 
-  .block-icon { font-size: 12px; flex-shrink: 0; }
+  .block-icon { font-size: calc(12px * var(--s, 1)); flex-shrink: 0; }
 
   .block-label {
-    flex: 1; font-size: 10px; font-weight: 700;
+    flex: 1; font-size: calc(10px * var(--s, 1)); font-weight: 700;
     letter-spacing: 0.7px; color: var(--text-muted);
     text-transform: uppercase; cursor: text;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -334,16 +337,17 @@
   .block-label:hover { color: var(--text-secondary); }
 
   .label-input {
-    flex: 1; font-size: 10px; font-weight: 700; letter-spacing: 0.7px;
+    flex: 1; font-size: calc(10px * var(--s, 1)); font-weight: 700; letter-spacing: 0.7px;
     text-transform: uppercase; color: var(--text-primary);
     background: var(--bg-base); border: 1px solid var(--accent);
-    border-radius: 4px; padding: 1px 6px; min-width: 0;
-    cursor: text;
+    border-radius: calc(4px * var(--s, 1)); padding: calc(1px * var(--s, 1)) calc(6px * var(--s, 1));
+    min-width: 0; cursor: text;
   }
 
   .hdr-btn {
-    font-size: 14px; color: var(--text-muted); padding: 2px 5px;
-    border-radius: 4px; line-height: 1; opacity: 0;
+    font-size: calc(14px * var(--s, 1)); color: var(--text-muted);
+    padding: calc(2px * var(--s, 1)) calc(5px * var(--s, 1));
+    border-radius: calc(4px * var(--s, 1)); line-height: 1; opacity: 0;
     transition: opacity 0.15s, color 0.15s, background 0.15s;
   }
   .block:hover .hdr-btn { opacity: 1; }
@@ -366,7 +370,7 @@
     /* size set via inline style (scales with 1/zoom for consistent screen size) */
     cursor: se-resize;
     background: linear-gradient(135deg, transparent 55%, rgba(99,102,241,0.3) 55%);
-    border-radius: 0 0 14px 0;
+    border-radius: 0 0 calc(14px * var(--s, 1)) 0;
     touch-action: none;
     transition: background 0.15s;
   }

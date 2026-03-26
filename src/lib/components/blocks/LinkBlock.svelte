@@ -232,18 +232,18 @@
 
   /* ── Form ── */
   .link-form {
-    display: flex; flex-direction: column; gap: 10px;
-    padding: 16px; flex: 1;
+    display: flex; flex-direction: column; gap: calc(10px * var(--s, 1));
+    padding: calc(16px * var(--s, 1)); flex: 1;
   }
   .form-hint {
-    font-size: 11px; color: var(--text-muted);
-    background: var(--bg-overlay); border-radius: 6px;
-    padding: 6px 10px; line-height: 1.4;
+    font-size: calc(11px * var(--s, 1)); color: var(--text-muted);
+    background: var(--bg-overlay); border-radius: calc(6px * var(--s, 1));
+    padding: calc(6px * var(--s, 1)) calc(10px * var(--s, 1)); line-height: 1.4;
   }
   .link-form input {
-    padding: 9px 13px; font-size: 13px; width: 100%; box-sizing: border-box;
+    padding: calc(9px * var(--s, 1)) calc(13px * var(--s, 1)); font-size: calc(13px * var(--s, 1)); width: 100%; box-sizing: border-box;
     background: var(--bg-overlay); border: 1.5px solid var(--border);
-    border-radius: 9px; color: var(--text-primary); font-family: inherit;
+    border-radius: calc(9px * var(--s, 1)); color: var(--text-primary); font-family: inherit;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .link-form input:focus {
@@ -251,16 +251,16 @@
     box-shadow: 0 0 0 3px var(--accent-dim);
   }
   .link-form input::placeholder { color: var(--text-muted); }
-  .err { color: #ef4444; font-size: 11px; margin-top: -4px; }
-  .form-row { display: flex; gap: 8px; }
+  .err { color: #ef4444; font-size: calc(11px * var(--s, 1)); margin-top: -4px; }
+  .form-row { display: flex; gap: calc(8px * var(--s, 1)); }
   .btn-save {
-    flex: 1; padding: 9px; background: var(--accent); color: #fff;
-    border-radius: 9px; font-size: 13px; font-weight: 600; transition: opacity 0.15s;
+    flex: 1; padding: calc(9px * var(--s, 1)); background: var(--accent); color: #fff;
+    border-radius: calc(9px * var(--s, 1)); font-size: calc(13px * var(--s, 1)); font-weight: 600; transition: opacity 0.15s;
   }
   .btn-save:hover { opacity: 0.88; }
   .btn-cancel {
-    flex: 1; padding: 9px; background: var(--bg-active);
-    color: var(--text-secondary); border-radius: 9px; font-size: 13px;
+    flex: 1; padding: calc(9px * var(--s, 1)); background: var(--bg-active);
+    color: var(--text-secondary); border-radius: calc(9px * var(--s, 1)); font-size: calc(13px * var(--s, 1));
     transition: background 0.15s;
   }
   .btn-cancel:hover { background: var(--bg-hover); }
@@ -268,20 +268,20 @@
   /* ── Embed ── */
   .embed-wrapper { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
   .embed-bar {
-    display: flex; align-items: center; gap: 6px; padding: 4px 8px;
+    display: flex; align-items: center; gap: calc(6px * var(--s, 1)); padding: calc(4px * var(--s, 1)) calc(8px * var(--s, 1));
     background: var(--bg-surface); border-bottom: 1px solid var(--border);
     flex-shrink: 0; min-width: 0;
   }
   .plat-badge {
-    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px;
+    font-size: calc(10px * var(--s, 1)); font-weight: 700; padding: calc(2px * var(--s, 1)) calc(7px * var(--s, 1)); border-radius: calc(20px * var(--s, 1));
     white-space: nowrap; flex-shrink: 0; letter-spacing: 0.3px;
   }
-  .embed-title { flex: 1; font-size: 11px; color: var(--text-muted); font-weight: 500; }
+  .embed-title { flex: 1; font-size: calc(11px * var(--s, 1)); color: var(--text-muted); font-weight: 500; }
   .embed-actions { display: flex; gap: 2px; flex-shrink: 0; }
   .bar-btn {
-    padding: 3px 7px; background: var(--bg-overlay);
-    border: 1px solid var(--border); border-radius: 5px;
-    font-size: 11px; color: var(--text-muted); cursor: pointer;
+    padding: calc(3px * var(--s, 1)) calc(7px * var(--s, 1)); background: var(--bg-overlay);
+    border: 1px solid var(--border); border-radius: calc(5px * var(--s, 1));
+    font-size: calc(11px * var(--s, 1)); color: var(--text-muted); cursor: pointer;
     transition: all 0.15s; text-decoration: none;
   }
   .bar-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
@@ -290,27 +290,27 @@
 
   /* ── Simple card ── */
   .simple-card {
-    display: flex; align-items: center; gap: 10px;
-    padding: 12px 14px; flex: 1;
+    display: flex; align-items: center; gap: calc(10px * var(--s, 1));
+    padding: calc(12px * var(--s, 1)) calc(14px * var(--s, 1)); flex: 1;
   }
-  .simple-icon { font-size: 22px; flex-shrink: 0; }
+  .simple-icon { font-size: calc(22px * var(--s, 1)); flex-shrink: 0; }
   .simple-info { flex: 1; min-width: 0; }
-  .simple-site { font-size: 10px; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .simple-site { font-size: calc(10px * var(--s, 1)); color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
   .simple-title {
-    font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 2px 0 0;
+    font-size: calc(13px * var(--s, 1)); font-weight: 600; color: var(--text-primary); margin: calc(2px * var(--s, 1)) 0 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .simple-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .simple-actions { display: flex; gap: calc(6px * var(--s, 1)); flex-shrink: 0; }
   .open-btn {
-    padding: 6px 12px; background: var(--accent); color: #fff;
-    border-radius: 8px; font-size: 12px; font-weight: 600;
+    padding: calc(6px * var(--s, 1)) calc(12px * var(--s, 1)); background: var(--accent); color: #fff;
+    border-radius: calc(8px * var(--s, 1)); font-size: calc(12px * var(--s, 1)); font-weight: 600;
     text-decoration: none; transition: opacity 0.15s; white-space: nowrap;
   }
   .open-btn:hover { opacity: 0.88; }
   .edit-btn {
-    padding: 6px 10px; background: var(--bg-active);
-    border: 1px solid var(--border); border-radius: 8px;
-    font-size: 12px; color: var(--text-secondary); transition: background 0.15s;
+    padding: calc(6px * var(--s, 1)) calc(10px * var(--s, 1)); background: var(--bg-active);
+    border: 1px solid var(--border); border-radius: calc(8px * var(--s, 1));
+    font-size: calc(12px * var(--s, 1)); color: var(--text-secondary); transition: background 0.15s;
   }
   .edit-btn:hover { background: var(--bg-hover); }
 

@@ -163,27 +163,27 @@
 
   /* Toolbar */
   .shape-toolbar {
-    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-    padding: 5px 8px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: calc(6px * var(--s, 1)); flex-wrap: wrap;
+    padding: calc(5px * var(--s, 1)) calc(8px * var(--s, 1)); border-bottom: 1px solid var(--border);
     background: var(--bg-overlay); flex-shrink: 0;
   }
-  .tb-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
-  .tb-lbl { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+  .tb-sep { width: 1px; height: calc(18px * var(--s, 1)); background: var(--border); flex-shrink: 0; }
+  .tb-lbl { font-size: calc(10px * var(--s, 1)); color: var(--text-muted); white-space: nowrap; }
 
   .shape-types { display: flex; gap: 2px; }
   .shape-btn {
-    padding: 2px 7px; border-radius: var(--radius-sm);
-    font-size: 14px; color: var(--text-muted);
+    padding: calc(2px * var(--s, 1)) calc(7px * var(--s, 1)); border-radius: var(--radius-sm);
+    font-size: calc(14px * var(--s, 1)); color: var(--text-muted);
     background: transparent; border: 1px solid transparent;
     transition: all var(--transition);
   }
   .shape-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
   .shape-btn.active { color: var(--accent); background: var(--accent-dim); border-color: var(--accent); }
 
-  .color-group { display: flex; align-items: center; gap: 4px; }
-  .swatches { display: flex; gap: 3px; align-items: center; }
+  .color-group { display: flex; align-items: center; gap: calc(4px * var(--s, 1)); }
+  .swatches { display: flex; gap: calc(3px * var(--s, 1)); align-items: center; }
   .swatch {
-    width: 14px; height: 14px; border-radius: 50%;
+    width: calc(14px * var(--s, 1)); height: calc(14px * var(--s, 1)); border-radius: 50%;
     border: 2px solid transparent; transition: transform var(--transition), outline var(--transition);
     flex-shrink: 0;
   }
@@ -191,7 +191,7 @@
   .swatch.active { outline: 2px solid var(--text-primary); outline-offset: 1px; }
 
   .color-input {
-    width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border);
+    width: calc(18px * var(--s, 1)); height: calc(18px * var(--s, 1)); border-radius: 50%; border: 1px solid var(--border);
     padding: 0; cursor: pointer; background: none; overflow: hidden;
   }
   .color-input::-webkit-color-swatch-wrapper { padding: 0; }
@@ -201,7 +201,7 @@
   .shape-canvas {
     flex: 1; position: relative;
     display: flex; align-items: center; justify-content: center;
-    padding: 12px; overflow: hidden; cursor: default;
+    padding: calc(12px * var(--s, 1)); overflow: hidden; cursor: default;
   }
 
   .shape-svg {
@@ -219,24 +219,24 @@
 
   .text-display {
     max-width: 70%; text-align: center; word-break: break-word;
-    font-size: clamp(10px, 2.5vw, 15px); font-weight: 600;
+    font-size: calc(14px * var(--s, 1)); font-weight: 600;
     color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.6);
     line-height: 1.3; pointer-events: none;
   }
 
   .text-editor {
-    width: 60%; min-height: 48px; resize: none;
+    width: 60%; min-height: calc(48px * var(--s, 1)); resize: none;
     background: rgba(0,0,0,0.45); color: #fff;
-    border: 1px solid rgba(255,255,255,0.4); border-radius: 4px;
-    padding: 5px 8px; font-size: 13px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.4); border-radius: calc(4px * var(--s, 1));
+    padding: calc(5px * var(--s, 1)) calc(8px * var(--s, 1)); font-size: calc(13px * var(--s, 1)); font-weight: 600;
     text-align: center; line-height: 1.4;
     outline: none; backdrop-filter: blur(4px);
   }
   .text-editor::placeholder { color: rgba(255,255,255,0.5); }
 
   .text-hint {
-    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
-    font-size: 10px; color: var(--text-muted); pointer-events: none;
+    position: absolute; bottom: calc(8px * var(--s, 1)); left: 50%; transform: translateX(-50%);
+    font-size: calc(10px * var(--s, 1)); color: var(--text-muted); pointer-events: none;
     white-space: nowrap; opacity: 0;
     transition: opacity var(--transition);
   }

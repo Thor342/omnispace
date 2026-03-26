@@ -118,15 +118,15 @@
 <style>
   .task-block { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
 
-  .progress-bar { height: 3px; background: var(--bg-active); flex-shrink: 0; }
+  .progress-bar { height: calc(3px * var(--s, 1)); background: var(--bg-active); flex-shrink: 0; }
   .fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--green)); transition: width 0.4s; }
-  .progress-label { font-size: 10px; color: var(--text-muted); padding: 3px 10px; flex-shrink: 0; }
+  .progress-label { font-size: calc(10px * var(--s, 1)); color: var(--text-muted); padding: calc(3px * var(--s, 1)) calc(10px * var(--s, 1)); flex-shrink: 0; }
 
-  .task-list { flex: 1; overflow-y: auto; padding: 6px 8px; }
+  .task-list { flex: 1; overflow-y: auto; padding: calc(6px * var(--s, 1)) calc(8px * var(--s, 1)); }
 
   .task-row {
-    display: flex; align-items: center; gap: 8px;
-    padding: 5px 4px; border-radius: var(--radius-sm);
+    display: flex; align-items: center; gap: calc(8px * var(--s, 1));
+    padding: calc(5px * var(--s, 1)) calc(4px * var(--s, 1)); border-radius: var(--radius-sm);
     transition: background var(--transition);
   }
   .task-row:hover { background: var(--bg-hover); }
@@ -134,40 +134,40 @@
 
   .check { flex-shrink: 0; }
   .circle {
-    display: block; width: 17px; height: 17px; border-radius: 50%;
+    display: block; width: calc(17px * var(--s, 1)); height: calc(17px * var(--s, 1)); border-radius: 50%;
     border: 2px solid var(--border); transition: border-color var(--transition);
   }
   .check:hover .circle { border-color: var(--accent); }
   .circle.filled {
     background: var(--green); border-color: var(--green);
-    color: #fff; font-size: 10px;
+    color: #fff; font-size: calc(10px * var(--s, 1));
     display: flex; align-items: center; justify-content: center;
   }
 
-  .task-title { flex: 1; font-size: 12px; color: var(--text-primary); cursor: text; }
+  .task-title { flex: 1; font-size: calc(12px * var(--s, 1)); color: var(--text-primary); cursor: text; }
   .done-text  { text-decoration: line-through; color: var(--text-muted); }
   .edit-input {
-    flex: 1; font-size: 12px; padding: 2px 6px;
+    flex: 1; font-size: calc(12px * var(--s, 1)); padding: calc(2px * var(--s, 1)) calc(6px * var(--s, 1));
     border-radius: var(--radius-sm); background: var(--bg-overlay);
     color: var(--text-primary); border: 1px solid var(--accent);
     outline: none;
   }
 
   .del {
-    font-size: 14px; color: var(--text-muted); opacity: 0;
-    padding: 1px 4px; line-height: 1;
+    font-size: calc(14px * var(--s, 1)); color: var(--text-muted); opacity: 0;
+    padding: calc(1px * var(--s, 1)) calc(4px * var(--s, 1)); line-height: 1;
     transition: opacity var(--transition), color var(--transition);
   }
   .task-row:hover .del { opacity: 1; }
   .del:hover { color: var(--red); }
 
-  .empty { text-align: center; color: var(--text-muted); font-size: 12px; padding: 20px 8px; }
+  .empty { text-align: center; color: var(--text-muted); font-size: calc(12px * var(--s, 1)); padding: calc(20px * var(--s, 1)) calc(8px * var(--s, 1)); }
 
-  .add-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border); flex-shrink: 0; }
-  .add-input { flex: 1; padding: 6px 10px; font-size: 12px; border-radius: var(--radius-sm); }
+  .add-row { display: flex; gap: calc(6px * var(--s, 1)); padding: calc(8px * var(--s, 1)); border-top: 1px solid var(--border); flex-shrink: 0; }
+  .add-input { flex: 1; padding: calc(6px * var(--s, 1)) calc(10px * var(--s, 1)); font-size: calc(12px * var(--s, 1)); border-radius: var(--radius-sm); }
   .add-btn {
-    width: 30px; height: 30px; border-radius: var(--radius-sm);
-    background: var(--accent); color: #fff; font-size: 18px; line-height: 1;
+    width: calc(30px * var(--s, 1)); height: calc(30px * var(--s, 1)); border-radius: var(--radius-sm);
+    background: var(--accent); color: #fff; font-size: calc(18px * var(--s, 1)); line-height: 1;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
   }

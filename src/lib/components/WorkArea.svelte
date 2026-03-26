@@ -594,7 +594,7 @@
       <h2>{$t.workArea.welcome}</h2>
       <p>{$t.workArea.selectSpace}</p>
       {#if $spaces.length === 0}
-        <button class="create-space-btn" on:click={() => window.dispatchEvent(new CustomEvent("omni:create-space"))}>
+        <button class="create-space-btn" on:click|stopPropagation={() => window.dispatchEvent(new CustomEvent("omni:create-space"))}>
           {$t.sidebar.newSpace}
         </button>
       {/if}

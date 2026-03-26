@@ -124,11 +124,11 @@
 
   .note-title {
     background: transparent; border: none;
-    font-size: 13.5px; font-weight: 700; color: #5C4400;
-    padding: 9px 16px 7px;
+    font-size: calc(13.5px * var(--s, 1)); font-weight: 700; color: #5C4400;
+    padding: calc(9px * var(--s, 1)) calc(16px * var(--s, 1)) calc(7px * var(--s, 1));
     flex-shrink: 0; font-family: inherit;
     border-bottom: 1.5px solid rgba(180,140,0,0.22);
-    line-height: 24px;
+    line-height: calc(24px * var(--s, 1));
   }
   .note-title::placeholder { color: rgba(92,68,0,0.28); }
   .note-title:focus { outline: none; }
@@ -136,7 +136,7 @@
   /* ── Toolbar ── */
   .toolbar {
     display: flex; align-items: center; gap: 1px;
-    padding: 4px 8px;
+    padding: calc(4px * var(--s, 1)) calc(8px * var(--s, 1));
     border-bottom: 1px solid rgba(180,140,0,0.2);
     flex-shrink: 0;
     flex-wrap: wrap;
@@ -144,50 +144,50 @@
   }
 
   .tb-btn {
-    padding: 3px 7px; border-radius: 4px;
-    font-size: 11px; font-weight: 600;
+    padding: calc(3px * var(--s, 1)) calc(7px * var(--s, 1));
+    border-radius: calc(4px * var(--s, 1));
+    font-size: calc(11px * var(--s, 1)); font-weight: 600;
     color: #6B5000; background: transparent;
     cursor: pointer; line-height: 1.4;
     transition: background 0.15s;
   }
   .tb-btn:hover { background: rgba(180,140,0,0.15); }
-  .tb-btn.heading { font-family: serif; font-size: 10px; }
+  .tb-btn.heading { font-family: serif; font-size: calc(10px * var(--s, 1)); }
   .tb-btn.italic i { font-style: italic; }
   .tb-btn.underline u { text-decoration: underline; }
   .tb-btn.strike s { text-decoration: line-through; }
 
   .tb-sep {
-    width: 1px; height: 14px;
+    width: 1px; height: calc(14px * var(--s, 1));
     background: rgba(180,140,0,0.3);
-    margin: 0 3px;
+    margin: 0 calc(3px * var(--s, 1));
   }
 
   /* ── Editor rico ── */
   .note-editor {
     flex: 1; overflow-y: auto;
-    padding: 5px 16px 10px;
-    font-size: 13px;
-    line-height: 24px;
+    padding: calc(5px * var(--s, 1)) calc(16px * var(--s, 1)) calc(10px * var(--s, 1));
+    font-size: calc(13px * var(--s, 1));
+    line-height: calc(24px * var(--s, 1));
     color: #4A3800;
     font-family: inherit;
     outline: none;
     word-break: break-word;
     background-image: repeating-linear-gradient(
-      transparent 0px, transparent 23px,
-      rgba(180,140,0,0.18) 23px, rgba(180,140,0,0.18) 24px
+      transparent 0px, transparent calc(23px * var(--s, 1)),
+      rgba(180,140,0,0.18) calc(23px * var(--s, 1)), rgba(180,140,0,0.18) calc(24px * var(--s, 1))
     );
-    background-size: 100% 24px;
+    background-size: 100% calc(24px * var(--s, 1));
     background-attachment: local;
-    background-position-y: 5px;
+    background-position-y: calc(5px * var(--s, 1));
   }
 
-  /* Todos los elementos usan el mismo line-height (24px) para alinearse con las rayas */
-  .note-editor :global(h1) { font-size: 16px; font-weight: 800; color: #3A2600; margin: 0; line-height: 24px; }
-  .note-editor :global(h2) { font-size: 14px; font-weight: 700; color: #3E2A00; margin: 0; line-height: 24px; }
-  .note-editor :global(h3) { font-size: 13px; font-weight: 700; color: #4A3000; margin: 0; line-height: 24px; }
-  .note-editor :global(p)  { margin: 0; line-height: 24px; }
-  .note-editor :global(ul), .note-editor :global(ol) { padding-left: 20px; margin: 0; }
-  .note-editor :global(li) { margin: 0; line-height: 24px; }
+  .note-editor :global(h1) { font-size: calc(16px * var(--s, 1)); font-weight: 800; color: #3A2600; margin: 0; line-height: calc(24px * var(--s, 1)); }
+  .note-editor :global(h2) { font-size: calc(14px * var(--s, 1)); font-weight: 700; color: #3E2A00; margin: 0; line-height: calc(24px * var(--s, 1)); }
+  .note-editor :global(h3) { font-size: calc(13px * var(--s, 1)); font-weight: 700; color: #4A3000; margin: 0; line-height: calc(24px * var(--s, 1)); }
+  .note-editor :global(p)  { margin: 0; line-height: calc(24px * var(--s, 1)); }
+  .note-editor :global(ul), .note-editor :global(ol) { padding-left: calc(20px * var(--s, 1)); margin: 0; }
+  .note-editor :global(li) { margin: 0; line-height: calc(24px * var(--s, 1)); }
   .note-editor :global(b), .note-editor :global(strong) { color: #3A2800; }
   .note-editor :global(u) { text-decoration-color: rgba(100,70,0,0.5); }
 </style>

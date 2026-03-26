@@ -242,18 +242,19 @@
 
   /* ── Bare input (timer set) ── */
   .bare-input {
-    width: 70px; text-align: center; font-size: 15px; font-weight: 400;
+    width: calc(70px * var(--s, 1)); text-align: center; font-size: calc(15px * var(--s, 1)); font-weight: 400;
     background: transparent; border: none; border-bottom: 1px solid var(--border);
-    color: var(--text-primary); padding: 2px 4px; letter-spacing: 1px; outline: none;
+    color: var(--text-primary); padding: calc(2px * var(--s, 1)) calc(4px * var(--s, 1)); letter-spacing: 1px; outline: none;
     font-variant-numeric: tabular-nums;
   }
   .bare-input::placeholder { color: var(--text-muted); }
   .bare-input:focus { border-bottom-color: var(--accent); }
 
   /* ── Controls ── */
-  .ctrl-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .ctrl-row { display: flex; gap: calc(8px * var(--s, 1)); flex-wrap: wrap; justify-content: center; }
   .bare-btn {
-    padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 500;
+    padding: calc(3px * var(--s, 1)) calc(10px * var(--s, 1));
+    border-radius: calc(20px * var(--s, 1)); font-size: calc(10px * var(--s, 1)); font-weight: 500;
     color: var(--text-secondary); background: var(--bg-overlay);
     border: 1px solid var(--border); transition: background 0.15s, color 0.15s;
     letter-spacing: 0.3px;
@@ -264,19 +265,19 @@
 
   /* ── Done badge ── */
   .done-badge {
-    font-size: 12px; font-weight: 600; color: #f9a8d4;
+    font-size: calc(12px * var(--s, 1)); font-weight: 600; color: #f9a8d4;
     animation: pulse 0.6s ease infinite alternate; letter-spacing: 0.4px;
   }
 
   /* ── Laps ── */
   .laps {
-    width: 100%; max-height: 70px; overflow-y: auto;
+    width: 100%; max-height: calc(70px * var(--s, 1)); overflow-y: auto;
     border-top: 1px solid var(--border); scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
   }
   .lap-row {
-    display: flex; justify-content: space-between; padding: 2px 8px;
-    font-size: 10px; color: var(--text-secondary);
+    display: flex; justify-content: space-between; padding: calc(2px * var(--s, 1)) calc(8px * var(--s, 1));
+    font-size: calc(10px * var(--s, 1)); color: var(--text-secondary);
     border-bottom: 1px solid var(--border);
     font-variant-numeric: tabular-nums;
   }
@@ -284,13 +285,13 @@
 
   /* ── Mode selector ── */
   .mode-bar {
-    display: flex; align-items: center; gap: 6px;
+    display: flex; align-items: center; gap: calc(6px * var(--s, 1));
     justify-content: center; flex-shrink: 0;
-    padding: 2px 0 4px; font-size: 10px;
+    padding: calc(2px * var(--s, 1)) 0 calc(4px * var(--s, 1)); font-size: calc(10px * var(--s, 1));
   }
   .mode-opt {
     color: var(--text-muted); font-weight: 500; letter-spacing: 0.3px;
-    padding: 1px 2px; border-bottom: 1.5px solid transparent;
+    padding: calc(1px * var(--s, 1)) calc(2px * var(--s, 1)); border-bottom: 1.5px solid transparent;
     transition: color 0.15s, border-color 0.15s;
   }
   .mode-opt:hover { color: var(--text-secondary); }

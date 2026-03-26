@@ -9,6 +9,7 @@
 
   export let content: string;
   export let onUpdate: ((content: string) => void) | undefined = undefined;
+  export let zoom: number = 1;
 
   $: data = JSON.parse(content || '{"stored_path":"","name":"","file_type":"other","size":0}') as FileContent;
   // Asset protocol tiene soporte nativo de Range requests en WebView2 (dev y producción).
@@ -480,10 +481,10 @@
     </div>
 
   {:else if data.file_type === "audio"}
-    <div class="audio-player" bind:this={audioPlayerEl} class:ap-compact={audioPlayerH < 170} class:ap-mini={audioPlayerH < 110}>
+    <div class="audio-player" bind:this={audioPlayerEl} class:ap-compact={audioPlayerH < Math.round(170/zoom)} class:ap-mini={audioPlayerH < Math.round(110/zoom)}>
 
       <!-- Album art — hidden when small -->
-      {#if audioPlayerH >= 170}
+      {#if audioPlayerH >= Math.round(170/zoom)}
         <div class="audio-art-wrap">
           <div class="audio-art" class:ap-playing={audioPlaying}>
             <div class="eq-bars" class:active={audioPlaying}>
@@ -494,17 +495,17 @@
       {/if}
 
       <!-- Track info — hidden in mini mode -->
-      {#if audioPlayerH >= 110}
+      {#if audioPlayerH >= Math.round(110/zoom)}
         <div class="ap-info">
           <p class="ap-title" title={data.name}>{audioTitle || data.name}</p>
-          {#if audioPlayerH >= 140}
+          {#if audioPlayerH >= Math.round(140/zoom)}
             <p class="ap-sub">{formatSize(data.size)}</p>
           {/if}
         </div>
       {/if}
 
       <!-- Progress bar — hidden only in mini mode -->
-      {#if audioPlayerH >= 90}
+      {#if audioPlayerH >= Math.round(90/zoom)}
         <div class="ap-seek-row">
           <span class="ap-ts">{formatAudioTime(audioCurrentTime)}</span>
           <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -524,7 +525,7 @@
 
       <!-- Controls — always visible -->
       <div class="ap-controls">
-        {#if audioPlayerH >= 90}
+        {#if audioPlayerH >= Math.round(90/zoom)}
           <button class="ap-skip-btn" title="−10s"
             on:click={() => audioEl && (audioEl.currentTime = Math.max(0, audioEl.currentTime - 10))}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
@@ -537,7 +538,7 @@
             <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
           {/if}
         </button>
-        {#if audioPlayerH >= 90}
+        {#if audioPlayerH >= Math.round(90/zoom)}
           <button class="ap-skip-btn" title="+10s"
             on:click={() => audioEl && (audioEl.currentTime = Math.min(audioDuration, audioEl.currentTime + 10))}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M18 6h-2v12h2zm-3.5 6L6 6v12z"/></svg>
@@ -570,13 +571,13 @@
 
   .empty-file {
     flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 8px;
-    text-align: center; padding: 20px;
+    align-items: center; justify-content: center; gap: calc(8px * var(--s, 1));
+    text-align: center; padding: calc(20px * var(--s, 1));
     background: linear-gradient(160deg, var(--bg-surface) 60%, var(--bg-overlay));
   }
-  .empty-file span { font-size: 52px; filter: drop-shadow(0 3px 8px rgba(0,0,0,0.12)); line-height: 1; }
-  .empty-file p { color: var(--text-secondary); font-size: 13px; font-weight: 600; max-width: 150px; word-break: break-word; line-height: 1.4; }
-  .size { font-size: 11px !important; color: var(--text-muted) !important; font-weight: 400 !important; }
+  .empty-file span { font-size: calc(52px * var(--s, 1)); filter: drop-shadow(0 3px 8px rgba(0,0,0,0.12)); line-height: 1; }
+  .empty-file p { color: var(--text-secondary); font-size: calc(13px * var(--s, 1)); font-weight: 600; max-width: calc(150px * var(--s, 1)); word-break: break-word; line-height: 1.4; }
+  .size { font-size: calc(11px * var(--s, 1)) !important; color: var(--text-muted) !important; font-weight: 400 !important; }
 
   .file-img  { flex: 1; width: 100%; height: 100%; object-fit: cover; object-position: top; min-height: 0; display: block; }
   .file-video { flex: 1; width: 100%; height: 100%; min-height: 0; display: block; }
@@ -586,21 +587,21 @@
   .pdf-placeholder {
     flex: 1; display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    gap: 8px; padding: 20px;
+    gap: calc(8px * var(--s, 1)); padding: calc(20px * var(--s, 1));
     background: var(--bg-overlay);
   }
-  .pdf-ph-icon { font-size: 44px; line-height: 1; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.15)); }
+  .pdf-ph-icon { font-size: calc(44px * var(--s, 1)); line-height: 1; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.15)); }
   .pdf-ph-name {
-    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    font-size: calc(13px * var(--s, 1)); font-weight: 600; color: var(--text-primary);
     text-align: center; word-break: break-all; max-width: 100%;
     overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
   }
-  .pdf-ph-size { font-size: 11px; color: var(--text-muted); }
+  .pdf-ph-size { font-size: calc(11px * var(--s, 1)); color: var(--text-muted); }
   .pdf-ph-btn {
-    margin-top: 4px;
-    padding: 7px 20px; border-radius: var(--radius-sm);
+    margin-top: calc(4px * var(--s, 1));
+    padding: calc(7px * var(--s, 1)) calc(20px * var(--s, 1)); border-radius: var(--radius-sm);
     background: var(--accent); color: #fff;
-    font-size: 13px; font-weight: 500;
+    font-size: calc(13px * var(--s, 1)); font-weight: 500;
     transition: opacity 0.15s;
   }
   .pdf-ph-btn:hover { opacity: 0.88; }
@@ -611,15 +612,15 @@
     overflow: hidden; min-height: 0; background: #525659; position: relative;
   }
   .pdf-btn-group {
-    position: absolute; top: 8px; right: 8px; z-index: 10;
-    display: flex; gap: 4px;
+    position: absolute; top: calc(8px * var(--s, 1)); right: calc(8px * var(--s, 1)); z-index: 10;
+    display: flex; gap: calc(4px * var(--s, 1));
     opacity: 0; transition: opacity 0.2s;
   }
   .pdf-wrapper:hover .pdf-btn-group { opacity: 1; }
   .pdf-action-btn {
     background: rgba(0,0,0,0.55); color: #fff;
-    border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;
-    padding: 4px 8px; font-size: 13px; line-height: 1;
+    border: 1px solid rgba(255,255,255,0.2); border-radius: calc(6px * var(--s, 1));
+    padding: calc(4px * var(--s, 1)) calc(8px * var(--s, 1)); font-size: calc(13px * var(--s, 1)); line-height: 1;
     backdrop-filter: blur(4px); cursor: pointer;
   }
   .pdf-action-btn:hover { background: rgba(0,0,0,0.75); }
@@ -629,13 +630,13 @@
   .audio-player {
     flex: 1; display: flex; flex-direction: column;
     align-items: center; justify-content: space-between;
-    padding: 12px 14px 12px; gap: 8px; overflow: hidden;
+    padding: calc(12px * var(--s, 1)) calc(14px * var(--s, 1)) calc(12px * var(--s, 1)); gap: calc(8px * var(--s, 1)); overflow: hidden;
     background: transparent;
   }
   /* Compact mode: tighter padding */
-  .audio-player.ap-compact { padding: 8px 12px; gap: 6px; }
+  .audio-player.ap-compact { padding: calc(8px * var(--s, 1)) calc(12px * var(--s, 1)); gap: calc(6px * var(--s, 1)); }
   /* Mini mode: minimal padding, just controls */
-  .audio-player.ap-mini { padding: 4px 10px; gap: 4px; justify-content: center; }
+  .audio-player.ap-mini { padding: calc(4px * var(--s, 1)) calc(10px * var(--s, 1)); gap: calc(4px * var(--s, 1)); justify-content: center; }
 
   /* Album art — grows to fill available space but stays square */
   .audio-art-wrap {
@@ -643,9 +644,9 @@
     display: flex; align-items: center; justify-content: center;
   }
   .audio-art {
-    width: min(100%, 200px);
+    width: min(100%, calc(200px * var(--s, 1)));
     aspect-ratio: 1 / 1;
-    border-radius: 14px;
+    border-radius: calc(14px * var(--s, 1));
     background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
     display: flex; align-items: center; justify-content: center;
     box-shadow: 0 8px 28px rgba(99,102,241,0.35);
@@ -692,39 +693,41 @@
 
   /* Seek bar */
   .ap-seek-row {
-    display: flex; align-items: center; gap: 6px; width: 100%; flex-shrink: 0;
+    display: flex; align-items: center; gap: calc(6px * var(--s, 1)); width: 100%; flex-shrink: 0;
   }
-  .ap-ts { font-size: 10px; color: var(--text-muted); white-space: nowrap; min-width: 24px; }
+  .ap-ts { font-size: calc(10px * var(--s, 1)); color: var(--text-muted); white-space: nowrap; min-width: calc(24px * var(--s, 1)); }
   .ap-ts:last-child { text-align: right; }
   .ap-seek-track {
-    flex: 1; height: 4px; border-radius: 2px;
+    flex: 1; height: calc(4px * var(--s, 1)); border-radius: calc(2px * var(--s, 1));
     background: var(--border); cursor: pointer; position: relative;
     transition: height 0.15s;
   }
-  .ap-seek-track:hover { height: 6px; }
+  .ap-seek-track:hover { height: calc(6px * var(--s, 1)); }
   .ap-seek-fill {
     height: 100%; border-radius: inherit;
     background: var(--accent); position: relative;
     transition: width 0.1s linear;
   }
   .ap-seek-thumb {
-    position: absolute; right: -5px; top: 50%; transform: translateY(-50%);
-    width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    position: absolute; right: calc(-5px * var(--s, 1)); top: 50%; transform: translateY(-50%);
+    width: calc(10px * var(--s, 1)); height: calc(10px * var(--s, 1)); border-radius: 50%; background: var(--accent);
     opacity: 0; transition: opacity 0.15s;
   }
   .ap-seek-track:hover .ap-seek-thumb { opacity: 1; }
 
   /* Controls */
-  .ap-controls { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  .ap-controls { display: flex; align-items: center; gap: calc(12px * var(--s, 1)); flex-shrink: 0; }
   .ap-skip-btn {
     background: none; border: none; color: var(--text-secondary);
-    cursor: pointer; padding: 4px; border-radius: 50%;
+    cursor: pointer; padding: calc(4px * var(--s, 1)); border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     transition: color 0.15s, transform 0.1s;
   }
+  .ap-skip-btn svg { width: calc(16px * var(--s, 1)); height: calc(16px * var(--s, 1)); }
+  .ap-play-btn svg { width: calc(24px * var(--s, 1)); height: calc(24px * var(--s, 1)); }
   .ap-skip-btn:hover { color: var(--text-primary); transform: scale(1.1); }
   .ap-play-btn {
-    width: 40px; height: 40px; border-radius: 50%;
+    width: calc(40px * var(--s, 1)); height: calc(40px * var(--s, 1)); border-radius: 50%;
     background: var(--accent); color: #fff; border: none;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; flex-shrink: 0;
@@ -739,12 +742,12 @@
 
   .doc-toolbar {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 4px 10px; background: var(--bg-surface);
-    border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 6px;
+    padding: calc(4px * var(--s, 1)) calc(10px * var(--s, 1)); background: var(--bg-surface);
+    border-bottom: 1px solid var(--border); flex-shrink: 0; gap: calc(6px * var(--s, 1));
   }
-  .doc-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .doc-actions { display: flex; gap: calc(4px * var(--s, 1)); flex-shrink: 0; }
   .doc-btn {
-    padding: 3px 8px; font-size: 11px; border-radius: 4px;
+    padding: calc(3px * var(--s, 1)) calc(8px * var(--s, 1)); font-size: calc(11px * var(--s, 1)); border-radius: calc(4px * var(--s, 1));
     background: var(--bg-overlay); color: var(--text-secondary);
     border: 1px solid var(--border); cursor: pointer;
     transition: all 0.15s; white-space: nowrap;
@@ -755,7 +758,7 @@
 
   .doc-loading {
     flex: 1; display: flex; align-items: center; justify-content: center;
-    color: var(--text-muted); font-size: 13px;
+    color: var(--text-muted); font-size: calc(13px * var(--s, 1));
   }
 
   .word-view {
@@ -787,7 +790,7 @@
     display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1;
   }
   .sheet-tab {
-    padding: 3px 12px; font-size: 11px; border-radius: 4px;
+    padding: calc(3px * var(--s, 1)) calc(12px * var(--s, 1)); font-size: calc(11px * var(--s, 1)); border-radius: calc(4px * var(--s, 1));
     background: var(--bg-overlay); color: var(--text-muted);
     border: 1px solid var(--border); cursor: pointer;
     white-space: nowrap; transition: all 0.15s;
@@ -829,26 +832,27 @@
   .ppt-card {
     flex: 1; display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    gap: 14px; padding: 20px 16px;
+    gap: calc(14px * var(--s, 1)); padding: calc(20px * var(--s, 1)) calc(16px * var(--s, 1));
   }
   .ppt-icon-wrap { flex-shrink: 0; }
-  .ppt-icon { width: 64px; height: 64px; display: block; filter: drop-shadow(0 4px 12px rgba(196,62,28,0.35)); }
+  .ppt-icon { width: calc(64px * var(--s, 1)); height: calc(64px * var(--s, 1)); display: block; filter: drop-shadow(0 4px 12px rgba(196,62,28,0.35)); }
   .ppt-info { text-align: center; width: 100%; }
   .ppt-name {
-    font-size: 13px; font-weight: 700; color: var(--text-primary);
+    font-size: calc(13px * var(--s, 1)); font-weight: 700; color: var(--text-primary);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    max-width: 100%; margin: 0 0 4px;
+    max-width: 100%; margin: 0 0 calc(4px * var(--s, 1));
   }
-  .ppt-meta { font-size: 11px; color: var(--text-muted); margin: 0; }
+  .ppt-meta { font-size: calc(11px * var(--s, 1)); color: var(--text-muted); margin: 0; }
   .ppt-open-btn {
-    display: flex; align-items: center; gap: 7px;
-    padding: 9px 18px; border-radius: 9px;
+    display: flex; align-items: center; gap: calc(7px * var(--s, 1));
+    padding: calc(9px * var(--s, 1)) calc(18px * var(--s, 1)); border-radius: calc(9px * var(--s, 1));
     background: #C43E1C; color: #fff;
-    font-size: 13px; font-weight: 600;
+    font-size: calc(13px * var(--s, 1)); font-weight: 600;
     box-shadow: 0 4px 14px rgba(196,62,28,0.35);
     transition: opacity 0.15s, transform 0.1s;
     flex-shrink: 0;
   }
   .ppt-open-btn:hover { opacity: 0.88; transform: translateY(-1px); }
   .ppt-open-btn:active { transform: translateY(0); }
+  .ppt-open-btn svg { width: calc(14px * var(--s, 1)); height: calc(14px * var(--s, 1)); }
 </style>
