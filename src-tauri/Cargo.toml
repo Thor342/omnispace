@@ -1,6 +1,6 @@
 [package]
 name = "omnispace"
-version = "1.0.1"
+version = "1.0.2"
 description = "OmniSpace - Personal Project Organizer"
 authors = ["OmniSpace"]
 edition = "2021"
@@ -32,6 +32,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
 windows = { version = "0.61", features = [] }
+windows-core = "0.61"
 
 [profile.release]
 panic = "abort"

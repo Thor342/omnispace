@@ -7,12 +7,6 @@
   import { language, t } from "../stores/language";
   import { LANGUAGES } from "../i18n/translations";
   import appIcon from "../../assets/icon.png";
-  import faqImg1 from "../../assets/faq/faq-1.png";
-  import faqImg2 from "../../assets/faq/faq-2.png";
-  import faqImg3 from "../../assets/faq/faq-3.png";
-  import faqImg4 from "../../assets/faq/faq-4.png";
-  import faqImg41 from "../../assets/faq/faq-4.1.png";
-  import faqImg5 from "../../assets/faq/faq-5.png";
 
   export let onClose: () => void;
 
@@ -33,13 +27,13 @@
     emailCopyTimer = setTimeout(() => { emailCopied = false; }, 2000);
   }
 
-  const FAQ_DATA: Record<string, { q: string; a: string; imgs?: string[] }[]> = {
+  const FAQ_DATA: Record<string, { q: string; a: string }[]> = {
     es: [
-      { q: "¿Cómo creo un nuevo espacio?", a: "En el panel izquierdo haz clic en '+ Nuevo Espacio', escribe el nombre y presiona Enter o el botón Crear.", imgs: [faqImg1] },
-      { q: "¿Cómo añado páginas?", a: "Selecciona un espacio y haz clic en el botón '+' en la barra de páginas superior. Haz doble clic en el nombre de la pestaña para renombrarla.", imgs: [faqImg2] },
-      { q: "¿Cómo añado bloques al canvas?", a: "Usa el botón '+ Añadir' en la barra inferior para insertar notas, enlaces, imágenes, videos, PDFs, tareas, calendarios y más.", imgs: [faqImg3] },
-      { q: "¿Puedo dibujar en el canvas?", a: "Sí. Haz clic en '✏️ Lápiz' en la barra inferior para activar el modo dibujo. Puedes cambiar el color y el grosor.", imgs: [faqImg4, faqImg41] },
-      { q: "¿Cómo exporto o comparto una página?", a: "Usa los botones de Exportar e Importar en la barra de páginas. Exportar guarda la página como una carpeta que puedes compartir con otros usuarios.", imgs: [faqImg5] },
+      { q: "¿Cómo creo un nuevo espacio?", a: "En el panel izquierdo haz clic en '+ Nuevo Espacio', escribe el nombre y presiona Enter o el botón Crear." },
+      { q: "¿Cómo añado páginas?", a: "Selecciona un espacio y haz clic en el botón '+' en la barra de páginas superior. Haz doble clic en el nombre de la pestaña para renombrarla." },
+      { q: "¿Cómo añado bloques al canvas?", a: "Usa el botón '+ Añadir' en la barra inferior para insertar notas, enlaces, imágenes, videos, PDFs, tareas, calendarios y más." },
+      { q: "¿Puedo dibujar en el canvas?", a: "Sí. Haz clic en '✏️ Lápiz' en la barra inferior para activar el modo dibujo. Puedes cambiar el color y el grosor." },
+      { q: "¿Cómo exporto o comparto una página?", a: "Usa los botones de Exportar e Importar en la barra de páginas. Exportar guarda la página como una carpeta que puedes compartir con otros usuarios." },
       { q: "¿Cómo organizo espacios en categorías?", a: "Haz clic en '+ Nueva Categoría' en el panel izquierdo y arrastra los espacios hacia ella." },
       { q: "¿Mis datos se guardan automáticamente?", a: "Sí. OmniSpace guarda todos los cambios automáticamente en tu dispositivo. No necesitas conexión a internet." },
       { q: "¿Puedo incrustar YouTube o Canva?", a: "Sí. En el menú '+ Añadir', elige YouTube o Canva y pega el enlace para incrustarlo en el canvas." },
@@ -282,13 +276,6 @@
             {#if openFaqIndex === i}
               <div class="faq-a">
                 <p>{item.a}</p>
-                {#if item.imgs}
-                  <div class="faq-imgs">
-                    {#each item.imgs as img}
-                      <img src={img} alt="" class="faq-img" />
-                    {/each}
-                  </div>
-                {/if}
               </div>
             {/if}
           </div>

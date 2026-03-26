@@ -12,6 +12,7 @@
   import CanvasShape from "./CanvasShape.svelte";
   import CanvasToolbar from "./CanvasToolbar.svelte";
   import RecordAudioModal from "./RecordAudioModal.svelte";
+  import RecordVideoModal from "./RecordVideoModal.svelte";
   import { CW, CH, renderStroke, redrawAll as _redrawAll, eraseAt as _eraseAt, getCanvasPos } from "./canvasDrawing";
   import { type SnapResult, findSnapTarget, getPortCoords, isConnectorType } from "./canvasSnap";
   import { type HistoryEntry, pushHistory as _pushHistory } from "./canvasHistory";
@@ -25,6 +26,7 @@
   let maxZ = 0;
   let selectedBlockId: string | null = null;
   let showRecordModal = false;
+  let showVideoModal = false;
 
   // Draw
   let drawMode = false;
@@ -690,6 +692,17 @@
     blocks = [...blocks, block];
   }
 
+  async function onVideoRecorded(storedPath: string, name: string, size: number) {
+    showVideoModal = false;
+    const offset = (blocks.length % 8) * 28;
+    const x = 80 + offset, y = 80 + offset;
+    const content = JSON.stringify({ stored_path: storedPath, name, file_type: "video", size });
+    const block = await createBlock(pageId, "file", x, y, 480, 290, content);
+    pushHistory({ type: "block_added", blockId: block.id });
+    maxZ = block.z_index;
+    blocks = [...blocks, block];
+  }
+
   async function addBlock(type: BlockType, hint?: string) {
     const offset = (blocks.length % 8) * 28;
     // Center on current viewport position
@@ -697,6 +710,7 @@
     const vy = viewportEl ? (viewportEl.scrollTop  + viewportEl.clientHeight / 2) / zoom : 300;
 
     if (hint === "record-audio") { showRecordModal = true; return; }
+    if (hint === "record-video") { showVideoModal = true; return; }
     if (type === "file") {
       const [fw, fh] = DEFAULT_SIZES.file;
       await addFileBlock(Math.max(20, vx - fw/2 + offset), Math.max(20, vy - fh/2 + offset), hint);
@@ -1137,6 +1151,14 @@
       {spaceId}
       onSave={onAudioRecorded}
       onClose={() => showRecordModal = false}
+    />
+  {/if}
+
+  {#if showVideoModal}
+    <RecordVideoModal
+      {spaceId}
+      onSave={onVideoRecorded}
+      onClose={() => showVideoModal = false}
     />
   {/if}
 

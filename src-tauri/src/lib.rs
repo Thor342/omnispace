@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
 
+
 pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
     pub files_dir: PathBuf,
@@ -164,8 +165,17 @@ pub fn run() {
             {
                 let window = app.get_webview_window("main").unwrap();
                 window.with_webview(|wv| unsafe {
-                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings5;
+                    use webview2_com::Microsoft::Web::WebView2::Win32::{
+                        ICoreWebView2Settings5,
+                        ICoreWebView2Profile4,
+                        ICoreWebView2_13,
+                        COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+                        COREWEBVIEW2_PERMISSION_KIND_CAMERA,
+                        COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+                    };
+                    use webview2_com::SetPermissionStateCompletedHandler;
                     use windows::core::Interface;
+                    use windows_core::HSTRING;
                     let result = (|| -> windows::core::Result<()> {
                         let settings = wv.controller().CoreWebView2()?.Settings()?;
                         // Keep page zoom disabled (WebView2 won't apply zoom on Ctrl+wheel)
@@ -174,6 +184,31 @@ pub fn run() {
                         // that our canvas JavaScript handler can intercept
                         let settings5: ICoreWebView2Settings5 = settings.cast()?;
                         settings5.SetIsPinchZoomEnabled(true)?;
+                        // Allow microphone permission automatically so getUserMedia works
+                        let wv2 = wv.controller().CoreWebView2()?;
+                        // Reset cached mic permission so WebView2 shows its dialog
+                        let wv2_13 = wv2.cast::<ICoreWebView2_13>()?;
+                        let profile = wv2_13.Profile()?;
+                        let profile4 = profile.cast::<ICoreWebView2Profile4>()?;
+                        let noop = || SetPermissionStateCompletedHandler::create(Box::new(|_| Ok(())));
+                        let origins = [
+                            HSTRING::from("http://localhost:5173"),
+                            HSTRING::from("tauri://localhost"),
+                        ];
+                        for origin in &origins {
+                            let _ = profile4.SetPermissionState(
+                                COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+                                origin,
+                                COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+                                &noop(),
+                            );
+                            let _ = profile4.SetPermissionState(
+                                COREWEBVIEW2_PERMISSION_KIND_CAMERA,
+                                origin,
+                                COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+                                &noop(),
+                            );
+                        }
                         Ok(())
                     })();
                     if let Err(e) = result {
@@ -222,6 +257,9 @@ pub fn run() {
             commands::files::save_audio_bytes,
             commands::files::delete_file,
             commands::files::open_mic_settings,
+            commands::files::reset_mic_permission,
+            commands::files::save_video_bytes,
+            commands::files::reset_camera_permission,
             commands::files::open_file,
             commands::files::read_file_as_base64,
             commands::files::fetch_og_meta,

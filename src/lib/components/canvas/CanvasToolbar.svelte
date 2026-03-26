@@ -67,6 +67,7 @@
     { type: "calendar" as BlockType, icon: "📅", label: $t.toolbar.calendar },
     { type: "clock"    as BlockType, icon: "🕐", label: $t.toolbar.clock },
     { type: "file"     as BlockType, hint: "record-audio", icon: "🎙", label: $t.toolbar.recordAudio, sep: true },
+    { type: "file"     as BlockType, hint: "record-video", icon: "📹", label: $t.toolbar.recordVideo },
     { type: "link"     as BlockType, hint: "youtube", icon: `<svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="5" fill="#FF0000"/><polygon points="9.5,7 9.5,17 17.5,12" fill="#fff"/></svg>`, label: "YouTube", sep: true },
     { type: "link"     as BlockType, hint: "canva",   icon: `<svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="#7D2AE8"/><path d="M15.5 8.5c-.6-.6-1.5-1-2.5-1-2.2 0-4 1.8-4 4s1.8 4 4 4c1 0 1.9-.4 2.5-1" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`, label: "Canva" },
   ];

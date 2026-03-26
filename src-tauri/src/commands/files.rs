@@ -227,6 +227,50 @@ pub async fn save_audio_bytes(
     })
 }
 
+/// Save raw video bytes (from MediaRecorder) as a .webm file in the space's files directory
+#[tauri::command]
+pub async fn save_video_bytes(
+    space_id: String,
+    bytes: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<AppFile, String> {
+    const MAX_VIDEO_SIZE: usize = 1024 * 1024 * 1024; // 1 GB
+    if bytes.len() > MAX_VIDEO_SIZE {
+        return Err("El video excede el tamaño máximo permitido (1 GB)".to_string());
+    }
+    let files_dir = state.files_dir.join(&space_id);
+    fs::create_dir_all(&files_dir).map_err(|e| e.to_string())?;
+
+    let id = Uuid::new_v4().to_string();
+    let now_str = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let file_name = format!("video_{}.webm", now_str);
+    let dest = files_dir.join(&file_name);
+
+    fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+
+    let size = bytes.len() as i64;
+    let now = Utc::now().to_rfc3339();
+    let stored_path = dest.to_string_lossy().to_string();
+
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "INSERT INTO files (id, space_id, name, original_path, stored_path, file_type, size, created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        rusqlite::params![id, space_id, file_name, "grabacion", stored_path, "video", size, now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(AppFile {
+        id,
+        space_id,
+        name: file_name,
+        original_path: "grabacion".to_string(),
+        stored_path,
+        file_type: "video".to_string(),
+        size,
+        created_at: now,
+    })
+}
+
 #[tauri::command]
 pub async fn read_file_as_base64(path: String) -> Result<String, String> {
     let data = fs::read(&path).map_err(|e| e.to_string())?;
@@ -471,4 +515,96 @@ fn base64_encode(data: &[u8]) -> String {
         i += 3;
     }
     result
+}
+
+/// Resetea el permiso cacheado del micrófono a DEFAULT para que WebView2
+/// muestre su diálogo de permiso la próxima vez que se llame getUserMedia.
+#[tauri::command]
+pub fn reset_mic_permission(app: tauri::AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::Manager;
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.with_webview(|wv| unsafe {
+                use webview2_com::Microsoft::Web::WebView2::Win32::{
+                    ICoreWebView2Profile4, ICoreWebView2_13,
+                    COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+                    COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+                };
+                use webview2_com::SetPermissionStateCompletedHandler;
+                use windows::core::Interface;
+                use windows_core::HSTRING;
+                let result = (|| -> windows::core::Result<()> {
+                    let wv2 = wv.controller().CoreWebView2()?;
+                    let wv2_13 = wv2.cast::<ICoreWebView2_13>()?;
+                    let profile = wv2_13.Profile()?;
+                    let profile4 = profile.cast::<ICoreWebView2Profile4>()?;
+                    let noop =
+                        || SetPermissionStateCompletedHandler::create(Box::new(|_| Ok(())));
+                    for origin in &[
+                        HSTRING::from("http://localhost:5173"),
+                        HSTRING::from("tauri://localhost"),
+                    ] {
+                        let _ = profile4.SetPermissionState(
+                            COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+                            origin,
+                            COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+                            &noop(),
+                        );
+                    }
+                    Ok(())
+                })();
+                if let Err(e) = result {
+                    eprintln!("reset_mic_permission failed: {e:?}");
+                }
+            });
+        }
+    }
+    let _ = app; // silence unused warning on non-Windows
+}
+
+/// Resetea el permiso cacheado de la cámara a DEFAULT para que WebView2
+/// muestre su diálogo de permiso la próxima vez que se llame getUserMedia.
+#[tauri::command]
+pub fn reset_camera_permission(app: tauri::AppHandle) {
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::Manager;
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.with_webview(|wv| unsafe {
+                use webview2_com::Microsoft::Web::WebView2::Win32::{
+                    ICoreWebView2Profile4, ICoreWebView2_13,
+                    COREWEBVIEW2_PERMISSION_KIND_CAMERA,
+                    COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+                };
+                use webview2_com::SetPermissionStateCompletedHandler;
+                use windows::core::Interface;
+                use windows_core::HSTRING;
+                let result = (|| -> windows::core::Result<()> {
+                    let wv2 = wv.controller().CoreWebView2()?;
+                    let wv2_13 = wv2.cast::<ICoreWebView2_13>()?;
+                    let profile = wv2_13.Profile()?;
+                    let profile4 = profile.cast::<ICoreWebView2Profile4>()?;
+                    let noop =
+                        || SetPermissionStateCompletedHandler::create(Box::new(|_| Ok(())));
+                    for origin in &[
+                        HSTRING::from("http://localhost:5173"),
+                        HSTRING::from("tauri://localhost"),
+                    ] {
+                        let _ = profile4.SetPermissionState(
+                            COREWEBVIEW2_PERMISSION_KIND_CAMERA,
+                            origin,
+                            COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+                            &noop(),
+                        );
+                    }
+                    Ok(())
+                })();
+                if let Err(e) = result {
+                    eprintln!("reset_camera_permission failed: {e:?}");
+                }
+            });
+        }
+    }
+    let _ = app;
 }
