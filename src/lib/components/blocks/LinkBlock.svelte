@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fetchOgMeta } from "../../api";
   import type { LinkContent, LinkType } from "../../types";
+  import { t } from "../../stores/language";
 
   export let content: string;
   export let onContentChange: (c: string) => void;
@@ -101,10 +102,11 @@
   const BAD_TITLES = ["error", "403 forbidden", "access denied", "just a moment", "attention required"];
   function isBadTitle(t: string) { return BAD_TITLES.some(b => t.trim().toLowerCase() === b); }
 
-  $: displayTitle = (data.og_title && !isBadTitle(data.og_title))
-    ? data.og_title
-    : (data.title && !isBadTitle(data.title) && data.title !== data.url)
-      ? data.title
+  // User-set title always takes precedence; OG title is a fallback
+  $: displayTitle = (data.title && !isBadTitle(data.title) && data.title !== data.url)
+    ? data.title
+    : (data.og_title && !isBadTitle(data.og_title))
+      ? data.og_title
       : domainOf(data.url);
 
   $: displaySite = data.og_site || domainOf(data.url).split(".")[0].toUpperCase();
@@ -113,11 +115,12 @@
   async function save() {
     error = "";
     const url = inputUrl.trim();
-    if (!url) { error = "Ingresa una URL"; return; }
-    if (!isValid(url)) { error = "URL no válida"; return; }
+    if (!url) { error = $t.linkBlock.errorEmpty; return; }
+    if (!isValid(url)) { error = $t.linkBlock.errorInvalid; return; }
 
     const type = detectType(url);
-    const title = inputTitle.trim() || domainOf(url);
+    const defaultTitle = data.link_type === "youtube" ? "YouTube" : data.link_type === "canva" ? "Canva" : domainOf(url);
+    const title = inputTitle.trim() || defaultTitle;
 
     // Base data first (show immediately)
     data = { url, title, link_type: type };
@@ -154,21 +157,23 @@
     <!-- ── Form ── -->
     <div class="link-form">
       {#if data.link_type === "youtube"}
-        <div class="form-hint">Pega el enlace del video de YouTube</div>
+        <div class="form-hint">{$t.linkBlock.youtubeHint}</div>
+        <input bind:value={inputTitle} placeholder={$t.linkBlock.nameOptional} />
         <input
           bind:value={inputUrl}
           placeholder="https://www.youtube.com/watch?v=… o youtu.be/…"
           on:keydown={e => e.key === "Enter" && save()}
         />
       {:else if data.link_type === "canva"}
-        <div class="form-hint">Pega el enlace de tu diseño de Canva</div>
+        <div class="form-hint">{$t.linkBlock.canvaHint}</div>
+        <input bind:value={inputTitle} placeholder={$t.linkBlock.nameOptional} />
         <input
           bind:value={inputUrl}
           placeholder="https://www.canva.com/design/…"
           on:keydown={e => e.key === "Enter" && save()}
         />
       {:else}
-        <input bind:value={inputTitle} placeholder="Nombre del enlace" />
+        <input bind:value={inputTitle} placeholder={$t.linkBlock.namePlaceholder} />
         <input
           bind:value={inputUrl}
           placeholder="https://…"
@@ -177,8 +182,8 @@
       {/if}
       {#if error}<p class="err">{error}</p>{/if}
       <div class="form-row">
-        <button class="btn-save" on:click={save}>Guardar</button>
-        {#if data.url}<button class="btn-cancel" on:click={() => editing = false}>Cancelar</button>{/if}
+        <button class="btn-save" on:click={save}>{$t.linkBlock.save}</button>
+        {#if data.url}<button class="btn-cancel" on:click={() => editing = false}>{$t.linkBlock.cancel}</button>{/if}
       </div>
     </div>
 
@@ -191,8 +196,8 @@
         </span>
         <span class="embed-title truncate">{data.title}</span>
         <div class="embed-actions">
-          <a href={data.url} target="_blank" rel="noopener" class="bar-btn" title="Abrir en nueva pestaña">↗</a>
-          <button class="bar-btn" on:click={startEdit} title="Editar">✏</button>
+          <a href={data.url} target="_blank" rel="noopener" class="bar-btn" title={$t.linkBlock.openTab}>↗</a>
+          <button class="bar-btn" on:click={startEdit} title={$t.linkBlock.edit}>✏</button>
         </div>
       </div>
       <div class="embed-frame">
@@ -215,8 +220,8 @@
         <p class="simple-title">{displayTitle}</p>
       </div>
       <div class="simple-actions">
-        <a href={data.url} target="_blank" rel="noopener" class="open-btn">Abrir ↗</a>
-        <button class="edit-btn" on:click={startEdit}>✏</button>
+        <a href={data.url} target="_blank" rel="noopener" class="open-btn">{$t.linkBlock.open}</a>
+        <button class="edit-btn" on:click={startEdit} title={$t.linkBlock.edit}>✏</button>
       </div>
     </div>
   {/if}

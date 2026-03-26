@@ -9,6 +9,7 @@
   import DeleteConfirmModal from "./DeleteConfirmModal.svelte";
   import IconPicker from "./IconPicker.svelte";
   import SettingsModal from "./SettingsModal.svelte";
+  import { t } from "../stores/language";
   import appIcon from "../../assets/icon.png";
 
   let collapsed = true;
@@ -79,10 +80,22 @@
     showCreateCat = false;
   }
 
-  function startEditSpace(space: { id: string; name: string; icon: string; color: string }) {
+  let editPopupX = 0, editPopupY = 0;
+
+  function positionPopup(btnEl: HTMLElement) {
+    const rect = btnEl.getBoundingClientRect();
+    const popupW = 210;
+    // Debajo del botón, borde derecho alineado con el botón (sin salirse de la pantalla)
+    editPopupX = Math.max(4, rect.right - popupW);
+    editPopupY = rect.bottom + 6;
+  }
+
+  function startEditSpace(space: { id: string; name: string; icon: string; color: string }, e: MouseEvent) {
+    editCatId = null;
     editSpaceId = space.id;
     editSpaceName = space.name;
     editSpaceIcon = space.icon;
+    positionPopup(e.currentTarget as HTMLElement);
   }
   async function commitEditSpace() {
     if (!editSpaceId || !editSpaceName.trim()) { editSpaceId = null; return; }
@@ -100,10 +113,12 @@
   let editCatName = "";
   let editCatIcon = "📂";
 
-  function startEditCat(cat: { id: string; name: string; icon: string; color: string }) {
+  function startEditCat(cat: { id: string; name: string; icon: string; color: string }, e: MouseEvent) {
+    editSpaceId = null;
     editCatId = cat.id;
     editCatName = cat.name;
     editCatIcon = cat.icon;
+    positionPopup(e.currentTarget as HTMLElement);
   }
   async function commitEditCat() {
     if (!editCatId || !editCatName.trim()) { editCatId = null; return; }
@@ -114,6 +129,10 @@
       ? { ...cat, name: editCatName.trim(), icon: editCatIcon }
       : cat));
     editCatId = null;
+  }
+
+  function focusEl(el: HTMLElement) {
+    requestAnimationFrame(() => el.focus());
   }
 
   // ── Delete space with countdown ──────────────────────────
@@ -292,6 +311,13 @@
       sectionOrder = [...cats.map(c => c.id), "__uncat__"];
     }
     catch (err) { console.error("Failed to load categories:", err); }
+
+    function onOpenCreateSpace() {
+      collapsed = false;
+      showCreate = true;
+    }
+    window.addEventListener("omni:create-space", onOpenCreateSpace);
+    return () => window.removeEventListener("omni:create-space", onOpenCreateSpace);
   });
 
   $: uncategorized = $spaces.filter(s => !s.category_id);
@@ -360,15 +386,14 @@
 <!-- ── Delete space modal ────────────────────────────────── -->
 {#if deleteConfirmSpaceId && deleteTargetSpace}
   <DeleteConfirmModal
-    title="¿Eliminar &quot;{deleteTargetSpace.name}&quot;?"
+    title={$t.deleteModal.deleteSpace(deleteTargetSpace.name)}
     countdown={deleteSpaceCountdown}
-    confirmLabel="Sí, eliminar espacio"
+    confirmLabel={$t.deleteModal.deleteSpaceConfirm}
     onConfirm={confirmDeleteSpaceAction}
     onCancel={cancelDeleteSpace}
   >
-    Se eliminarán <strong>permanentemente</strong> todas las páginas, bloques,
-    imágenes, trazos y datos de este espacio.<br/>
-    <strong>Esta acción no se puede deshacer.</strong>
+    {$t.deleteModal.deleteSpaceWarning}<br/>
+    <strong>{$t.deleteModal.irreversible}</strong>
   </DeleteConfirmModal>
 {/if}
 
@@ -376,13 +401,13 @@
 {#if confirmDeleteCat}
   {@const cat = $categories.find(c => c.id === confirmDeleteCat)}
   <DeleteConfirmModal
-    title="¿Eliminar categoría &quot;{cat?.name}&quot;?"
-    confirmLabel="Sí, eliminar categoría"
+    title={$t.deleteModal.deleteCat(cat?.name ?? "")}
+    confirmLabel={$t.deleteModal.deleteCatConfirm}
     onConfirm={() => confirmDeleteCat && handleDeleteCat(confirmDeleteCat)}
     onCancel={() => confirmDeleteCat = null}
   >
-    Los espacios dentro quedarán sin categoría.<br/>
-    <strong>Esta acción no se puede deshacer.</strong>
+    {$t.deleteModal.deleteCatWarning}<br/>
+    <strong>{$t.deleteModal.irreversible}</strong>
   </DeleteConfirmModal>
 {/if}
 
@@ -391,11 +416,34 @@
   <SettingsModal onClose={() => showSettings = false} />
 {/if}
 
-<!-- ── Edit overlays (close on outside click) ────────────── -->
+<!-- ── Edit popup (position:fixed, escapes overflow clips) ── -->
 {#if editSpaceId || editCatId}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="picker-overlay" on:click={() => { editSpaceId = null; editCatId = null; }} />
+  <div class="edit-popup-fixed" style="top:{editPopupY}px; left:{editPopupX}px;" on:click|stopPropagation>
+    {#if editSpaceId}
+      <input class="edit-input" bind:value={editSpaceName} use:focusEl
+        on:keydown={e => { if (e.key === "Enter") commitEditSpace(); if (e.key === "Escape") editSpaceId = null; }}
+        placeholder={$t.sidebar.name} />
+      <IconPicker bind:value={editSpaceIcon} />
+      <div class="edit-actions">
+        <button class="edit-save" on:click={commitEditSpace}>{$t.sidebar.save}</button>
+        <button class="edit-cancel" on:click={() => editSpaceId = null}>✕</button>
+      </div>
+    {:else if editCatId}
+      <input class="edit-input" bind:value={editCatName} use:focusEl
+        on:keydown={e => { if (e.key === "Enter") commitEditCat(); if (e.key === "Escape") editCatId = null; }}
+        placeholder={$t.sidebar.name} />
+      <IconPicker bind:value={editCatIcon} />
+      <div class="edit-actions">
+        <button class="edit-save" on:click={commitEditCat}>{$t.sidebar.save}</button>
+        <button class="edit-cancel" on:click={() => editCatId = null}>✕</button>
+      </div>
+    {/if}
+  </div>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="picker-overlay" on:click={() => { editSpaceId = null; editCatId = null; }}></div>
 {/if}
 
 <svelte:window on:click={handleWindowClick} />
@@ -434,20 +482,20 @@
             data-cat-drop="none"
             data-cat-item="__uncat__"
             data-cat-after={nextSectionId}
-            on:pointerdown={e => startDragCat(e, { id: "__uncat__", name: "Sin Categoría", color: "#6b7280", icon: "📂" })}
+            on:pointerdown={e => startDragCat(e, { id: "__uncat__", name: $t.sidebar.noCategory, color: "#6b7280", icon: "📂" })}
           >
             <span class="cat-drag-handle" aria-hidden="true">⠿</span>
             <div
               class="section-label drop-label"
               class:drag-over={drag?.type === "space" && dropTargetCat === null}
               data-cat-drop="none"
-            >{$categories.length > 0 ? "SIN CATEGORÍA" : "ESPACIOS"}</div>
+            >{$categories.length > 0 ? $t.sidebar.noCategory : $t.sidebar.spaces}</div>
           </div>
 
           <div class="uncategorized-list" class:drop-active={drag?.type === "space" && dropTargetCat === null} data-cat-drop="none">
             {#if uncategorized.length === 0 && $categories.length > 0}
               <p class="uncat-hint" class:drag-hint={drag?.type === "space" && dropTargetCat === null}>
-                {drag?.type === "space" && dropTargetCat === null ? "Soltar aquí" : "Arrastra espacios aquí"}
+                {drag?.type === "space" && dropTargetCat === null ? $t.sidebar.dropHere : $t.sidebar.dragSpacesHere}
               </p>
             {/if}
             {#each uncategorized as space, si (space.id)}
@@ -472,22 +520,8 @@
                 <span class="space-icon" style="--c:{space.color}">{space.icon}</span>
                 <span class="space-name truncate">{space.name}</span>
                 <div class="item-actions" class:popup-open={editSpaceId === space.id} on:click|stopPropagation>
-                  <div class="edit-wrap">
-                    <button class="item-edit-btn" title="Editar"
-                      on:click|stopPropagation={() => editSpaceId === space.id ? (editSpaceId = null) : startEditSpace(space)}>✎</button>
-                    {#if editSpaceId === space.id}
-                      <div class="edit-popup edit-popup-space" on:click|stopPropagation>
-                        <input class="edit-input" bind:value={editSpaceName}
-                          on:keydown={e => { if (e.key === "Enter") commitEditSpace(); if (e.key === "Escape") editSpaceId = null; }}
-                          placeholder="Nombre" />
-                        <IconPicker bind:value={editSpaceIcon} />
-                        <div class="edit-actions">
-                          <button class="edit-save" on:click={commitEditSpace}>Guardar</button>
-                          <button class="edit-cancel" on:click={() => editSpaceId = null}>✕</button>
-                        </div>
-                      </div>
-                    {/if}
-                  </div>
+                  <button class="item-edit-btn" title={$t.sidebar.edit}
+                    on:click|stopPropagation={(e) => startEditSpace(space, e)}>✎</button>
                   <button class="item-del" on:click|stopPropagation={() => requestDeleteSpace(space.id)}>×</button>
                 </div>
               </div>
@@ -518,30 +552,16 @@
             >
               <span class="cat-drag-handle" aria-hidden="true">⠿</span>
 
-              <button class="cat-toggle" on:click|stopPropagation={() => { if (!drag?.active) toggleCat(cat.id); }} title={isCatCollapsed ? "Expandir" : "Colapsar"}>
+              <button class="cat-toggle" on:click|stopPropagation={() => { if (!drag?.active) toggleCat(cat.id); }} title={isCatCollapsed ? $t.sidebar.expand : $t.sidebar.collapse}>
                 <span class="cat-arrow">{isCatCollapsed ? "▸" : "▾"}</span>
                 <span class="cat-icon" style="filter:drop-shadow(0 0 4px {cat.color})">{cat.icon}</span>
                 <span class="cat-name">{cat.name}</span>
                 <span class="cat-count">{catSpaces.length}</span>
               </button>
 
-              <div class="cat-actions" class:popup-open={editCatId === cat.id}>
-                <div class="edit-wrap">
-                  <button class="cat-btn" on:click|stopPropagation={() => editCatId === cat.id ? (editCatId = null) : startEditCat(cat)} title="Editar">✎</button>
-                  {#if editCatId === cat.id}
-                    <div class="edit-popup edit-popup-space" on:click|stopPropagation>
-                      <input class="edit-input" bind:value={editCatName}
-                        on:keydown={e => { if (e.key === "Enter") commitEditCat(); if (e.key === "Escape") editCatId = null; }}
-                        placeholder="Nombre" />
-                      <IconPicker bind:value={editCatIcon} />
-                      <div class="edit-actions">
-                        <button class="edit-save" on:click={commitEditCat}>Guardar</button>
-                        <button class="edit-cancel" on:click={() => editCatId = null}>✕</button>
-                      </div>
-                    </div>
-                  {/if}
-                </div>
-                <button class="cat-btn cat-btn-del" on:click|stopPropagation={() => confirmDeleteCat = cat.id} title="Eliminar">×</button>
+              <div class="cat-actions" class:popup-open={editCatId === cat.id} on:click|stopPropagation>
+                <button class="cat-btn" on:click|stopPropagation={(e) => startEditCat(cat, e)} title={$t.sidebar.edit}>✎</button>
+                <button class="cat-btn cat-btn-del" on:click|stopPropagation={() => confirmDeleteCat = cat.id}>×</button>
               </div>
             </div>
 
@@ -569,22 +589,8 @@
                     <span class="space-icon" style="--c:{space.color}">{space.icon}</span>
                     <span class="space-name truncate">{space.name}</span>
                     <div class="item-actions" class:popup-open={editSpaceId === space.id} on:click|stopPropagation>
-                      <div class="edit-wrap">
-                        <button class="item-edit-btn" title="Editar"
-                          on:click|stopPropagation={() => editSpaceId === space.id ? (editSpaceId = null) : startEditSpace(space)}>✎</button>
-                        {#if editSpaceId === space.id}
-                          <div class="edit-popup edit-popup-space" on:click|stopPropagation>
-                            <input class="edit-input" bind:value={editSpaceName}
-                              on:keydown={e => { if (e.key === "Enter") commitEditSpace(); if (e.key === "Escape") editSpaceId = null; }}
-                              placeholder="Nombre" />
-                            <IconPicker bind:value={editSpaceIcon} />
-                            <div class="edit-actions">
-                              <button class="edit-save" on:click={commitEditSpace}>Guardar</button>
-                              <button class="edit-cancel" on:click={() => editSpaceId = null}>✕</button>
-                            </div>
-                          </div>
-                        {/if}
-                      </div>
+                      <button class="item-edit-btn" title={$t.sidebar.edit}
+                        on:click|stopPropagation={(e) => startEditSpace(space, e)}>✎</button>
                       <button class="item-del" on:click|stopPropagation={() => requestDeleteSpace(space.id)}>×</button>
                     </div>
                   </div>
@@ -595,7 +601,7 @@
                 {/if}
 
                 {#if catSpaces.length === 0 && !(drag?.type === "space" && dropTargetCat === cat.id)}
-                  <p class="cat-empty">Sin espacios</p>
+                  <p class="cat-empty">{$t.sidebar.noSpaces}</p>
                 {/if}
               </div>
             {/if}
@@ -609,7 +615,7 @@
       {/if}
 
       {#if $spaces.length === 0}
-        <p class="empty-hint">Crea tu primer espacio ↓</p>
+        <p class="empty-hint">{$t.sidebar.emptyHint}</p>
       {/if}
 
     {:else}
@@ -632,46 +638,46 @@
       <!-- Footer -->
       <div class="sidebar-footer">
     {#if collapsed}
-      <button class="icon-btn" title="Nuevo Espacio" on:click|stopPropagation={() => { collapsed = false; showCreate = true; }}>+</button>
-      <button class="icon-btn" title="Configuración" on:click|stopPropagation={() => { collapsed = false; showSettings = true; }}>⚙️</button>
+      <button class="icon-btn" title={$t.sidebar.newSpaceTitle} on:click|stopPropagation={() => { collapsed = false; showCreate = true; }}>+</button>
+      <button class="icon-btn" title={$t.sidebar.configTitle} on:click|stopPropagation={() => { collapsed = false; showSettings = true; }}>⚙️</button>
 
     {:else if showCreate}
       <div class="create-panel">
-        <input bind:value={newName} placeholder="Nombre del espacio"
+        <input bind:value={newName} placeholder={$t.sidebar.nameSpace}
           class:input-error={createSpaceError}
           on:input={() => createSpaceError = false}
           on:keydown={e => e.key === "Enter" && handleCreateSpace()} />
         {#if createSpaceError}
-          <p class="field-error">Escribe un nombre para el espacio</p>
+          <p class="field-error">{$t.sidebar.errorSpaceName}</p>
         {/if}
         <IconPicker bind:value={newIcon} />
         <div class="create-actions">
-          <button class="btn-primary" on:click={handleCreateSpace}>Crear</button>
-          <button class="btn-ghost" on:click={() => { showCreate = false; createSpaceError = false; }}>Cancelar</button>
+          <button class="btn-primary" on:click={handleCreateSpace}>{$t.sidebar.create}</button>
+          <button class="btn-ghost" on:click={() => { showCreate = false; createSpaceError = false; }}>{$t.sidebar.cancel}</button>
         </div>
       </div>
 
     {:else if showCreateCat}
       <div class="create-panel">
-        <input bind:value={newCatName} placeholder="Nombre de la categoría"
+        <input bind:value={newCatName} placeholder={$t.sidebar.nameCategory}
           class:input-error={createCatError}
           on:input={() => createCatError = false}
           on:keydown={e => e.key === "Enter" && handleCreateCat()} />
         {#if createCatError}
-          <p class="field-error">Escribe un nombre para la categoría</p>
+          <p class="field-error">{$t.sidebar.errorCatName}</p>
         {/if}
         <IconPicker bind:value={newCatIcon} />
         <div class="create-actions">
-          <button class="btn-primary" on:click={handleCreateCat}>Crear</button>
-          <button class="btn-ghost" on:click={() => { showCreateCat = false; createCatError = false; }}>Cancelar</button>
+          <button class="btn-primary" on:click={handleCreateCat}>{$t.sidebar.create}</button>
+          <button class="btn-ghost" on:click={() => { showCreateCat = false; createCatError = false; }}>{$t.sidebar.cancel}</button>
         </div>
       </div>
 
     {:else}
-      <button class="new-space-btn" on:click={() => showCreate = true}>+ Nuevo Espacio</button>
-      <button class="new-cat-btn" on:click={() => showCreateCat = true}>+ Nueva Categoría</button>
+      <button class="new-space-btn" on:click={() => showCreate = true}>{$t.sidebar.newSpace}</button>
+      <button class="new-cat-btn" on:click={() => showCreateCat = true}>{$t.sidebar.newCategory}</button>
 
-      <button class="settings-btn" on:click|stopPropagation={() => showSettings = true}>⚙️ Configuración</button>
+      <button class="settings-btn" on:click|stopPropagation={() => showSettings = true}>{$t.sidebar.configuration}</button>
     {/if}
       </div><!-- /sidebar-footer -->
     </div><!-- /sidebar-body -->
@@ -798,7 +804,7 @@
   }
 
   .cat-actions {
-    display: flex; gap: 1px; opacity: 0;
+    display: flex; align-items: center; gap: 1px; opacity: 0;
     transition: opacity var(--transition); flex-shrink: 0;
   }
   .cat-header:hover .cat-actions,
@@ -893,8 +899,7 @@
     display: flex; align-items: center; gap: 1px;
     opacity: 0; transition: opacity var(--transition); flex-shrink: 0;
   }
-  .space-item:hover .item-actions,
-  .item-actions.popup-open { opacity: 1; }
+  .space-item:hover .item-actions { opacity: 1; }
 
   .item-del {
     font-size: 14px; color: var(--text-muted);
@@ -904,33 +909,23 @@
   .item-del:hover { color: var(--red); background: rgba(239,68,68,0.15); }
 
 
-  /* Edit popups */
-  .picker-overlay { position: fixed; inset: 0; z-index: 40; }
-  .edit-wrap { position: relative; }
+  /* Edit popup (position:fixed escapes overflow clips) */
+  .picker-overlay { position: fixed; inset: 0; z-index: 9990; pointer-events: auto; }
 
-  .item-edit-btn {
-    font-size: 13px; color: var(--text-muted);
-    padding: 1px 4px; line-height: 1; border-radius: 3px;
-    transition: color var(--transition), background var(--transition);
-  }
-  .item-edit-btn:hover { color: var(--accent); background: var(--accent-dim); }
-
-  .edit-popup {
-    position: absolute; right: 0; top: calc(100% + 4px);
+  .edit-popup-fixed {
+    position: fixed; z-index: 9999; pointer-events: auto;
     background: var(--bg-surface); border: 1px solid var(--border);
     border-radius: var(--radius-md); padding: 8px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    z-index: 50; min-width: 180px;
+    width: 210px;
     display: flex; flex-direction: column; gap: 6px;
   }
-  .edit-popup-space { min-width: 200px; }
 
   .edit-input {
     width: 100%; padding: 5px 8px; font-size: 12px;
     background: var(--bg-overlay); border: 1px solid var(--accent);
     border-radius: var(--radius-sm); color: var(--text-primary); outline: none;
   }
-
 
   .edit-actions { display: flex; gap: 4px; }
   .edit-save {
@@ -942,10 +937,17 @@
   .edit-cancel {
     padding: 4px 8px; background: var(--bg-overlay); color: var(--text-muted);
     border-radius: var(--radius-sm); font-size: 11px;
-    border: 1px solid var(--border);
-    transition: all var(--transition);
+    border: 1px solid var(--border); transition: all var(--transition);
   }
   .edit-cancel:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+  .item-edit-btn {
+    font-size: 13px; color: var(--text-muted);
+    padding: 1px 4px; line-height: 1; border-radius: 3px;
+    transition: color var(--transition), background var(--transition);
+  }
+  .item-edit-btn:hover { color: var(--accent); background: var(--accent-dim); }
+
 
   .empty-hint { text-align: center; color: var(--text-muted); font-size: 12px; padding: 16px 8px; }
 
@@ -981,7 +983,6 @@
   .create-panel input { width: 100%; padding: 7px 10px; }
   .create-panel input.input-error { border-color: var(--red, #ef4444); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--red, #ef4444) 25%, transparent); }
   .field-error { margin: 0; font-size: 11px; color: var(--red, #ef4444); }
-  .icon-picker { display: flex; flex-wrap: wrap; gap: 3px; }
 
   .create-actions { display: flex; gap: 6px; }
   .btn-primary { flex: 1; padding: 7px; background: var(--accent); color: #fff; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; }

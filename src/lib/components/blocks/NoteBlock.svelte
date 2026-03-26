@@ -1,45 +1,118 @@
 <script lang="ts">
-  import type { NoteContent } from "../../types";
+  import { onMount } from "svelte";
+  import DOMPurify from "dompurify";
+  import { t } from "../../stores/language";
 
   export let content: string;
   export let onContentChange: (c: string) => void;
 
-  function parse(c: string): NoteContent {
-    try { return JSON.parse(c || '{"title":"","text":""}'); }
-    catch { return { title: "", text: "" }; }
+  // ── Parse (backward-compatible con notas antiguas de texto plano) ──
+  function parse(c: string): { title: string; html: string } {
+    try {
+      const d = JSON.parse(c || "{}");
+      if (typeof d.html === "string") return { title: d.title ?? "", html: d.html };
+      if (typeof d.text === "string") {
+        // Convertir texto plano a HTML preservando saltos de línea
+        const html = d.text
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\n/g, "<br>");
+        return { title: d.title ?? "", html };
+      }
+      return { title: "", html: "" };
+    } catch { return { title: "", html: "" }; }
   }
 
-  let data: NoteContent = parse(content);
-  let isDirty = false;
+  let parsed = parse(content);
+  let noteTitle = parsed.title;
   let timer: ReturnType<typeof setTimeout>;
+  let editorEl: HTMLDivElement;
+  let editorFocused = false;
 
-  // Sync from prop changes (e.g., expand ↔ card switch) but only when not mid-edit
-  $: if (!isDirty) { data = parse(content); }
+  onMount(() => {
+    editorEl.innerHTML = parsed.html;
+  });
+
+  // Solo sincronizar desde afuera si el editor NO tiene el foco.
+  // Si el usuario está escribiendo, nunca tocamos innerHTML (evita que el cursor salte).
+  $: if (!editorFocused && editorEl) {
+    const np = parse(content);
+    noteTitle = np.title;
+    editorEl.innerHTML = np.html;
+  }
 
   function schedule() {
-    isDirty = true;
     clearTimeout(timer);
     timer = setTimeout(() => {
-      onContentChange(JSON.stringify(data));
-      isDirty = false;
+      const html = DOMPurify.sanitize(editorEl.innerHTML);
+      onContentChange(JSON.stringify({ title: noteTitle, html }));
     }, 800);
+  }
+
+  // ── Formateo ──────────────────────────────────────────────
+  function fmt(cmd: string, value?: string) {
+    editorEl.focus();
+    document.execCommand(cmd, false, value);
+    schedule();
+  }
+
+  function onTbMousedown(e: MouseEvent, cmd: string, value?: string) {
+    e.preventDefault(); // evita que el editor pierda el foco/selección
+    fmt(cmd, value);
+  }
+
+  // Atajos de teclado ya los maneja el navegador (Ctrl+B, Ctrl+I, Ctrl+U)
+  function onEditorKeydown(e: KeyboardEvent) {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      document.execCommand("insertText", false, "    ");
+    }
   }
 </script>
 
 <div class="note-block">
   <input
     class="note-title"
-    bind:value={data.title}
-    placeholder="Título…"
+    bind:value={noteTitle}
+    placeholder={$t.noteBlock.titlePlaceholder}
     on:input={schedule}
   />
-  <textarea
+
+  <!-- Toolbar de formato -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="toolbar" on:mousedown|stopPropagation>
+    <button class="tb-btn heading" title={$t.noteBlock.h1} on:mousedown={e => onTbMousedown(e, "formatBlock", "H1")}>H1</button>
+    <button class="tb-btn heading" title={$t.noteBlock.h2} on:mousedown={e => onTbMousedown(e, "formatBlock", "H2")}>H2</button>
+    <button class="tb-btn heading" title={$t.noteBlock.h3} on:mousedown={e => onTbMousedown(e, "formatBlock", "H3")}>H3</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" title={$t.noteBlock.bold} on:mousedown={e => onTbMousedown(e, "bold")}><b>B</b></button>
+    <button class="tb-btn italic" title={$t.noteBlock.italic} on:mousedown={e => onTbMousedown(e, "italic")}><i>I</i></button>
+    <button class="tb-btn underline" title={$t.noteBlock.underline} on:mousedown={e => onTbMousedown(e, "underline")}><u>U</u></button>
+    <button class="tb-btn strike" title={$t.noteBlock.strike} on:mousedown={e => onTbMousedown(e, "strikeThrough")}><s>S</s></button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" title={$t.noteBlock.bulletList} on:mousedown={e => onTbMousedown(e, "insertUnorderedList")}>•≡</button>
+    <button class="tb-btn" title={$t.noteBlock.numberedList} on:mousedown={e => onTbMousedown(e, "insertOrderedList")}>1≡</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" title={$t.noteBlock.paragraph} on:mousedown={e => onTbMousedown(e, "formatBlock", "P")}>¶</button>
+  </div>
+
+  <!-- Editor rico -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <!-- svelte-ignore a11y-interactive-supports-focus -->
+  <div
     class="note-editor"
-    bind:value={data.text}
-    placeholder="Escribe aquí…"
+    contenteditable="true"
+    bind:this={editorEl}
     on:input={schedule}
+    on:keydown={onEditorKeydown}
+    on:focus={() => editorFocused = true}
+    on:blur={() => editorFocused = false}
     spellcheck="false"
-  />
+    role="textbox"
+    aria-multiline="true"
+    aria-label="Editor de nota"
+  ></div>
 </div>
 
 <style>
@@ -47,12 +120,6 @@
     display: flex; flex-direction: column; flex: 1; overflow: hidden;
     background: #FFFBEB;
     position: relative;
-  }
-  .note-block::after {
-    content: "";
-    position: absolute; bottom: 0; left: 0; right: 0; height: 24px;
-    background: linear-gradient(to bottom, transparent, rgba(200,160,0,0.06));
-    pointer-events: none;
   }
 
   .note-title {
@@ -66,24 +133,61 @@
   .note-title::placeholder { color: rgba(92,68,0,0.28); }
   .note-title:focus { outline: none; }
 
+  /* ── Toolbar ── */
+  .toolbar {
+    display: flex; align-items: center; gap: 1px;
+    padding: 4px 8px;
+    border-bottom: 1px solid rgba(180,140,0,0.2);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    background: rgba(255,251,220,0.8);
+  }
+
+  .tb-btn {
+    padding: 3px 7px; border-radius: 4px;
+    font-size: 11px; font-weight: 600;
+    color: #6B5000; background: transparent;
+    cursor: pointer; line-height: 1.4;
+    transition: background 0.15s;
+  }
+  .tb-btn:hover { background: rgba(180,140,0,0.15); }
+  .tb-btn.heading { font-family: serif; font-size: 10px; }
+  .tb-btn.italic i { font-style: italic; }
+  .tb-btn.underline u { text-decoration: underline; }
+  .tb-btn.strike s { text-decoration: line-through; }
+
+  .tb-sep {
+    width: 1px; height: 14px;
+    background: rgba(180,140,0,0.3);
+    margin: 0 3px;
+  }
+
+  /* ── Editor rico ── */
   .note-editor {
-    flex: 1; resize: none; border: none; border-radius: 0;
-    background: transparent;
+    flex: 1; overflow-y: auto;
     padding: 5px 16px 10px;
     font-size: 13px;
     line-height: 24px;
     color: #4A3800;
     font-family: inherit;
+    outline: none;
+    word-break: break-word;
     background-image: repeating-linear-gradient(
-      transparent 0px,
-      transparent 23px,
-      rgba(180,140,0,0.18) 23px,
-      rgba(180,140,0,0.18) 24px
+      transparent 0px, transparent 23px,
+      rgba(180,140,0,0.18) 23px, rgba(180,140,0,0.18) 24px
     );
     background-size: 100% 24px;
     background-attachment: local;
     background-position-y: 5px;
   }
-  .note-editor::placeholder { color: rgba(74,56,0,0.28); }
-  .note-editor:focus { outline: none; }
+
+  /* Todos los elementos usan el mismo line-height (24px) para alinearse con las rayas */
+  .note-editor :global(h1) { font-size: 16px; font-weight: 800; color: #3A2600; margin: 0; line-height: 24px; }
+  .note-editor :global(h2) { font-size: 14px; font-weight: 700; color: #3E2A00; margin: 0; line-height: 24px; }
+  .note-editor :global(h3) { font-size: 13px; font-weight: 700; color: #4A3000; margin: 0; line-height: 24px; }
+  .note-editor :global(p)  { margin: 0; line-height: 24px; }
+  .note-editor :global(ul), .note-editor :global(ol) { padding-left: 20px; margin: 0; }
+  .note-editor :global(li) { margin: 0; line-height: 24px; }
+  .note-editor :global(b), .note-editor :global(strong) { color: #3A2800; }
+  .note-editor :global(u) { text-decoration-color: rgba(100,70,0,0.5); }
 </style>

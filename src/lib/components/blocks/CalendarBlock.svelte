@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { t } from "../../stores/language";
 
   export let content: string;
   export let onContentChange: (c: string) => void;
 
-  // ── Date constants ─────────────────────────────────────
-  const MONTH_NAMES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
-                       "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-const DAY_NAMES   = ["D","L","M","X","J","V","S"];
-  const DAY_FULL    = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-  const DAY_LONG    = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+  // ── Date constants (i18n) ──────────────────────────────
+  $: MONTH_NAMES = $t.calendarBlock.months;
+  $: DAY_NAMES   = $t.calendarBlock.dayLetters;
+  $: DAY_FULL    = $t.calendarBlock.dayShort;
+  $: DAY_LONG    = $t.calendarBlock.dayLong;
 
   const now = new Date();
 
@@ -131,7 +131,7 @@ const DAY_NAMES   = ["D","L","M","X","J","V","S"];
   <div class="cal-nav">
     <button class="nav-btn" on:click={prev}>‹</button>
     <span class="nav-label">{navLabel}</span>
-    <button class="nav-btn" on:click={goToday} title="Hoy">●</button>
+    <button class="nav-btn" on:click={goToday} title={$t.calendarBlock.today}>●</button>
     <button class="nav-btn" on:click={next}>›</button>
   </div>
   {/if}
@@ -153,7 +153,7 @@ const DAY_NAMES   = ["D","L","M","X","J","V","S"];
             class:past={isPast(monthData.year, monthData.month, day)}
             class:marked={markedSet.has(key)}
             on:click={() => toggleMark(monthData.year, monthData.month, day)}
-            title={markedSet.has(key) ? "Quitar recordatorio" : "Marcar como recordatorio"}
+            title={markedSet.has(key) ? $t.calendarBlock.removeReminder : $t.calendarBlock.markReminder}
           >
             {day}
             {#if markedSet.has(key)}<span class="mark-dot" />{/if}
@@ -173,7 +173,7 @@ const DAY_NAMES   = ["D","L","M","X","J","V","S"];
           class:week-today={isT}
           class:week-marked={markedSet.has(wkey)}
           on:click={() => toggleMark(date.getFullYear(), date.getMonth(), date.getDate())}
-          title={markedSet.has(wkey) ? "Quitar recordatorio" : "Marcar como recordatorio"}
+          title={markedSet.has(wkey) ? $t.calendarBlock.removeReminder : $t.calendarBlock.markReminder}
         >
           <span class="week-day-name">{DAY_FULL[date.getDay()]}</span>
           <span class="week-day-num" class:today={isT}>{date.getDate()}</span>

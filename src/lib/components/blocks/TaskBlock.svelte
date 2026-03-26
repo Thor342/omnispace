@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { TaskContent, TaskItem } from "../../types";
+  import { t as lang } from "../../stores/language";
 
   export let content: string;
   export let onContentChange: (c: string) => void;
@@ -7,6 +8,8 @@
   let data: TaskContent = JSON.parse(content || '{"tasks":[]}');
   let tasks: TaskItem[] = data.tasks ?? [];
   let newTitle = "";
+  let editingId: string | null = null;
+  let editingTitle = "";
 
   function save() { onContentChange(JSON.stringify({ tasks })); }
 
@@ -27,6 +30,25 @@
     save();
   }
 
+  function startEdit(id: string, title: string) {
+    editingId = id;
+    editingTitle = title;
+  }
+
+  function commitEdit() {
+    if (!editingId) return;
+    const trimmed = editingTitle.trim();
+    if (trimmed) {
+      tasks = tasks.map(t => t.id === editingId ? { ...t, title: trimmed } : t);
+      save();
+    }
+    editingId = null;
+  }
+
+  function cancelEdit() {
+    editingId = null;
+  }
+
   $: done    = tasks.filter(t =>  t.completed).length;
   $: total   = tasks.length;
   $: pct     = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -45,31 +67,51 @@
   <div class="task-list">
     {#each pending as t (t.id)}
       <div class="task-row">
-        <button class="check" on:click={() => toggle(t.id)}><span class="circle" /></button>
-        <span class="task-title">{t.title}</span>
-        <button class="del" on:click={() => remove(t.id)}>×</button>
+        <button class="check" on:click={() => toggle(t.id)} title={$lang.taskBlock.complete}><span class="circle"></span></button>
+        {#if editingId === t.id}
+          <input
+            class="edit-input"
+            bind:value={editingTitle}
+            on:blur={commitEdit}
+            on:keydown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") cancelEdit(); }}
+            on:click|stopPropagation
+          />
+        {:else}
+          <span class="task-title" on:dblclick|stopPropagation={() => startEdit(t.id, t.title)}>{t.title}</span>
+        {/if}
+        <button class="del" title={$lang.taskBlock.delete} on:click={() => remove(t.id)}>×</button>
       </div>
     {/each}
     {#each completed as t (t.id)}
       <div class="task-row done">
-        <button class="check done" on:click={() => toggle(t.id)}><span class="circle filled">✓</span></button>
-        <span class="task-title done-text">{t.title}</span>
-        <button class="del" on:click={() => remove(t.id)}>×</button>
+        <button class="check done" on:click={() => toggle(t.id)} title={$lang.taskBlock.uncheck}><span class="circle filled">✓</span></button>
+        {#if editingId === t.id}
+          <input
+            class="edit-input"
+            bind:value={editingTitle}
+            on:blur={commitEdit}
+            on:keydown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") cancelEdit(); }}
+            on:click|stopPropagation
+          />
+        {:else}
+          <span class="task-title done-text" on:dblclick|stopPropagation={() => startEdit(t.id, t.title)}>{t.title}</span>
+        {/if}
+        <button class="del" title={$lang.taskBlock.delete} on:click={() => remove(t.id)}>×</button>
       </div>
     {/each}
     {#if tasks.length === 0}
-      <p class="empty">Sin tareas — añade una ↓</p>
+      <p class="empty">{$lang.taskBlock.empty}</p>
     {/if}
   </div>
 
   <div class="add-row">
     <input
       bind:value={newTitle}
-      placeholder="Nueva tarea…"
+      placeholder={$lang.taskBlock.newTaskPlaceholder}
       on:keydown={e => e.key === "Enter" && addTask()}
       class="add-input"
     />
-    <button class="add-btn" on:click={addTask}>+</button>
+    <button class="add-btn" on:click={addTask}>{$lang.taskBlock.add}</button>
   </div>
 </div>
 
@@ -102,8 +144,14 @@
     display: flex; align-items: center; justify-content: center;
   }
 
-  .task-title { flex: 1; font-size: 12px; color: var(--text-primary); }
+  .task-title { flex: 1; font-size: 12px; color: var(--text-primary); cursor: text; }
   .done-text  { text-decoration: line-through; color: var(--text-muted); }
+  .edit-input {
+    flex: 1; font-size: 12px; padding: 2px 6px;
+    border-radius: var(--radius-sm); background: var(--bg-overlay);
+    color: var(--text-primary); border: 1px solid var(--accent);
+    outline: none;
+  }
 
   .del {
     font-size: 14px; color: var(--text-muted); opacity: 0;

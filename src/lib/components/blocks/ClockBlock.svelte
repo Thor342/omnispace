@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { t } from "../../stores/language";
 
   export let content: string;
   export let onContentChange: (c: string) => void;
@@ -14,12 +15,10 @@
 
   // ── Clock ──────────────────────────────────────────────
   let now = new Date();
-  const DAYS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
-  const MONTHS = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   $: clockHour12 = now.getHours() % 12 || 12;
   $: clockAmPm   = now.getHours() >= 12 ? "PM" : "AM";
   $: clockStr = `${pad(clockHour12)}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  $: dateStr  = `${DAYS[now.getDay()]}, ${now.getDate()} de ${MONTHS[now.getMonth()]} de ${now.getFullYear()}`;
+  $: dateStr  = $t.clockBlock.dateStr($t.clockBlock.days[now.getDay()], now.getDate(), $t.clockBlock.months[now.getMonth()], now.getFullYear());
 
   // ── Stopwatch ─────────────────────────────────────────
   let swRunning = false;
@@ -138,7 +137,7 @@
           {/if}
         </div>
       </div>
-      {#if timerDone}<div class="done-badge">⏰ ¡Tiempo!</div>{/if}
+      {#if timerDone}<div class="done-badge">{$t.clockBlock.timeUp}</div>{/if}
     </div>
 
   <!-- ── Stopwatch ── -->
@@ -147,14 +146,14 @@
       <div class="big-time mono">{swStr}</div>
       <div class="ctrl-row">
         {#if !swRunning}
-          <button class="bare-btn accent" on:click={swStart_}>▶ {swMs > 0 ? "reanudar" : "iniciar"}</button>
+          <button class="bare-btn accent" on:click={swStart_}>▶ {swMs > 0 ? $t.clockBlock.resume : $t.clockBlock.start}</button>
         {:else}
-          <button class="bare-btn" on:click={swPause}>⏸ pausa</button>
+          <button class="bare-btn" on:click={swPause}>⏸ {$t.clockBlock.pause}</button>
         {/if}
         {#if swRunning}
-          <button class="bare-btn" on:click={swLap}>◎ vuelta</button>
+          <button class="bare-btn" on:click={swLap}>◎ {$t.clockBlock.lap}</button>
         {/if}
-        <button class="bare-btn" on:click={swReset}>↺ reset</button>
+        <button class="bare-btn" on:click={swReset}>↺ {$t.clockBlock.reset}</button>
       </div>
       {#if laps.length > 0}
         <div class="laps">
@@ -168,11 +167,11 @@
 
   <!-- ── Mode selector ── -->
   <div class="mode-bar">
-    <button class="mode-opt" class:active={mode === "clock"}     on:click={() => saveMode("clock")}>reloj</button>
+    <button class="mode-opt" class:active={mode === "clock"}     on:click={() => saveMode("clock")}>{$t.clockBlock.clock}</button>
     <span class="mode-sep">·</span>
-    <button class="mode-opt" class:active={mode === "stopwatch"} on:click={() => saveMode("stopwatch")}>cronómetro</button>
+    <button class="mode-opt" class:active={mode === "stopwatch"} on:click={() => saveMode("stopwatch")}>{$t.clockBlock.stopwatch}</button>
     <span class="mode-sep">·</span>
-    <button class="mode-opt" class:active={mode === "timer"}     on:click={() => saveMode("timer")}>temporizador</button>
+    <button class="mode-opt" class:active={mode === "timer"}     on:click={() => saveMode("timer")}>{$t.clockBlock.timer}</button>
   </div>
 
 </div>

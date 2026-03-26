@@ -1,13 +1,16 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import { t } from "../stores/language";
   const dispatch = createEventDispatcher();
 
   export let title: string;
   export let countdown: number = 0;
-  export let confirmLabel: string = "Sí, eliminar";
+  export let confirmLabel: string = "";
   export let shake: boolean = false;
   export let onConfirm: () => void;
   export let onCancel: () => void;
+
+  $: resolvedConfirmLabel = confirmLabel || $t.deleteModal.deletePageConfirm;
 </script>
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -33,7 +36,7 @@
 
     {#if countdown > 0}
       <div class="countdown">
-        Lee el mensaje — podrás confirmar en <strong>{countdown}s</strong>
+        {$t.deleteModal.readMessage} <strong>{countdown}s</strong>
       </div>
       <div class="countdown-bar">
         <div class="countdown-fill" style="width:{((5 - countdown) / 5) * 100}%" />
@@ -46,9 +49,9 @@
         disabled={countdown > 0}
         on:click={onConfirm}
       >
-        {countdown > 0 ? `Espera ${countdown}s…` : confirmLabel}
+        {countdown > 0 ? $t.deleteModal.waitSeconds(countdown) : resolvedConfirmLabel}
       </button>
-      <button class="btn-ghost" on:click={onCancel}>Cancelar</button>
+      <button class="btn-ghost" on:click={onCancel}>{$t.deleteModal.cancel}</button>
     </div>
   </div>
 </div>
@@ -59,6 +62,7 @@
     background: rgba(0,0,0,0.65);
     display: flex; align-items: center; justify-content: center;
     z-index: 300; backdrop-filter: blur(3px);
+    pointer-events: auto;
   }
   .del-modal {
     background: var(--bg-surface); border: 1px solid var(--border);

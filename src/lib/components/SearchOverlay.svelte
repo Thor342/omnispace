@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte";
   import { spaces, pagesMap, activeSpaceId, activePageId } from "../stores/spaces";
+  import { t } from "../stores/language";
   import { getPages, getBlocks } from "../api";
 
   export let onClose: () => void;
@@ -36,14 +37,14 @@
   function extractLabel(blockType: string, content: string): { label: string; preview: string } {
     try {
       const d = JSON.parse(content || "{}");
-      if (blockType === "note") return { label: d.title || "Nota", preview: d.text?.slice(0, 80) || "" };
-      if (blockType === "link") return { label: d.title || d.url || "Enlace", preview: d.url || "" };
+      if (blockType === "note") return { label: d.title || $t.search.labelNote, preview: d.text?.slice(0, 80) || "" };
+      if (blockType === "link") return { label: d.title || d.url || $t.search.labelLink, preview: d.url || "" };
       if (blockType === "task") {
         const done = d.tasks?.filter((t: any) => t.completed).length ?? 0;
         const total = d.tasks?.length ?? 0;
-        return { label: "Tareas", preview: `${done}/${total} completadas` };
+        return { label: $t.search.labelTasks, preview: $t.search.labelTasksDone(done, total) };
       }
-      if (blockType === "file") return { label: d.name || "Documento", preview: d.file_type || "" };
+      if (blockType === "file") return { label: d.name || $t.search.labelDoc, preview: d.file_type || "" };
     } catch {}
     return { label: blockType, preview: "" };
   }
@@ -71,7 +72,7 @@
           results.push({
             spaceId: space.id, spaceName: space.name, spaceIcon: space.icon,
             pageId: page.id, pageTitle: page.title,
-            blockType: "page", label: page.title, preview: "Página"
+            blockType: "page", label: page.title, preview: $t.search.labelPage
           });
         }
 
@@ -117,14 +118,14 @@
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div class="overlay-backdrop" on:click={e => e.target === e.currentTarget && onClose()}>
-  <div class="search-panel" role="dialog" aria-label="Búsqueda global">
+  <div class="search-panel" role="dialog" aria-label={$t.search.placeholder}>
     <div class="search-bar">
       <span class="search-ico">🔍</span>
       <input
         bind:this={inputEl}
         bind:value={query}
         class="search-input"
-        placeholder="Buscar en todos los espacios…"
+        placeholder={$t.search.placeholder}
         autocomplete="off"
       />
       {#if searching}
@@ -137,7 +138,7 @@
     {#if query.length >= 2}
       <div class="results-list">
         {#if results.length === 0 && !searching}
-          <div class="no-results">Sin resultados para "<strong>{query}</strong>"</div>
+          <div class="no-results">{@html $t.search.noResults(`<strong>${query}</strong>`)}</div>
         {:else}
           {#each results as r, i}
             <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -164,11 +165,11 @@
         {/if}
       </div>
     {:else}
-      <div class="search-hint">Escribe al menos 2 caracteres para buscar</div>
+      <div class="search-hint">{$t.search.hint}</div>
     {/if}
 
     <div class="search-footer">
-      <span>↑↓ navegar</span><span>↵ abrir</span><span>Esc cerrar</span>
+      <span>{$t.search.navigate}</span><span>{$t.search.open}</span><span>{$t.search.close}</span>
     </div>
   </div>
 </div>

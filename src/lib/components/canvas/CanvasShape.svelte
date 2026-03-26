@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import type { Block } from "../../types";
+  import { t } from "../../stores/language";
 
   export let block: Block;
   export let zoom: number = 1;
@@ -9,6 +10,9 @@
   export let multiSelected: boolean = false;
   export let allBlocks: Block[] = [];
   export let onUpdate: (id: string, changes: Partial<Block>) => void;
+  export let onMove: ((id: string, x: number, y: number) => void) | undefined = undefined;
+  export let connectorMode: boolean = false;
+  export let onConnectorStart: ((blockId: string, port: string, x: number, y: number) => void) | undefined = undefined;
   export let onDelete: (id: string) => void;
   export let onSelect: (id: string) => void;
   export let onBringToFront: (id: string) => void;
@@ -54,12 +58,30 @@
     lx = block.x; ly = block.y; lw = block.width; lh = block.height;
   }
 
-  const TRIANGLE = "M50,3 L97,90 L3,90 Z";
-  const DIAMOND  = "M50,3 L97,50 L50,97 L3,50 Z";
+  const TRIANGLE = "M50,0 L100,100 L0,100 Z";
+  const DIAMOND  = "M50,0 L100,50 L50,100 L0,50 Z";
   // Symmetric heart: two cubic bezier bumps meeting at the bottom point
   const HEART    = "M50,82 C50,82 8,57 8,33 C8,18 18,8 33,8 C41,8 47,12 50,18 C53,12 59,8 67,8 C82,8 92,18 92,33 C92,57 50,82 50,82 Z";
 
   let shapeEl: HTMLDivElement;
+  let hovered = false;
+
+  // ── Port dot connector start ──────────────────────────
+  const PORT_POSITIONS: { port: string; css: string }[] = [
+    { port: "n", css: "left:50%;top:0%;transform:translate(-50%,-50%)" },
+    { port: "s", css: "left:50%;top:100%;transform:translate(-50%,-50%)" },
+    { port: "e", css: "left:100%;top:50%;transform:translate(-50%,-50%)" },
+    { port: "w", css: "left:0%;top:50%;transform:translate(-50%,-50%)" },
+  ];
+
+  function onPortPointerDown(e: PointerEvent, port: string) {
+    e.stopPropagation();
+    e.preventDefault();
+    const cx = lx + lw / 2, cy = ly + lh / 2;
+    const px = port === "w" ? lx : port === "e" ? lx + lw : cx;
+    const py = port === "n" ? ly : port === "s" ? ly + lh : cy;
+    onConnectorStart?.(block.id, port, px, py);
+  }
 
   // ── Drag ─────────────────────────────────────────────
   let dragging = false;
@@ -67,6 +89,7 @@
 
   function onShapePointerDown(e: PointerEvent) {
     if (drawMode || e.button !== 0) return;
+    if (connectorMode) return; // let viewport handle connector creation — don't stopPropagation
     if (dragging) onDragEnd(); // clean stuck state
     (document.activeElement as HTMLElement)?.blur();
     e.preventDefault(); e.stopPropagation();
@@ -92,6 +115,7 @@
     if (!dragging) return;
     lx = Math.max(0, dragBX + (e.clientX - dragSX) / zoom);
     ly = Math.max(0, dragBY + (e.clientY - dragSY) / zoom);
+    onMove?.(block.id, lx, ly);
   }
 
   // ── Resize ────────────────────────────────────────────
@@ -232,8 +256,24 @@
   // ── Connector local state ─────────────────────────────
   let ex1 = 0, ey1 = 0, ex2 = 0, ey2 = 0;
   $: if (!endpointDragging && isConnector) {
-    ex1 = data.x1 ?? 0; ey1 = data.y1 ?? 0;
-    ex2 = data.x2 ?? 0; ey2 = data.y2 ?? 0;
+    // For connected endpoints, read live position from allBlocks so the connector
+    // follows instantly when a connected block is dragged (no lag or jump).
+    if (data.startId) {
+      const sb = allBlocks.find(b => b.id === data.startId);
+      [ex1, ey1] = sb
+        ? getPortCoords(sb, data.startPort ?? "center")
+        : [data.x1 ?? 0, data.y1 ?? 0];
+    } else {
+      ex1 = data.x1 ?? 0; ey1 = data.y1 ?? 0;
+    }
+    if (data.endId) {
+      const eb = allBlocks.find(b => b.id === data.endId);
+      [ex2, ey2] = eb
+        ? getPortCoords(eb, data.endPort ?? "center")
+        : [data.x2 ?? 0, data.y2 ?? 0];
+    } else {
+      ex2 = data.x2 ?? 0; ey2 = data.y2 ?? 0;
+    }
   }
 
   const PAD = 28;
@@ -420,7 +460,7 @@
   <!-- Delete button (outside SVG, in canvas space) -->
   {#if selected && !drawMode}
     <div class="connector-ctrl" style="left:{midX}px; top:{midY - 28}px;">
-      <button class="del-btn" on:click|stopPropagation={() => onDelete(block.id)} title="Eliminar">×</button>
+      <button class="del-btn" on:click|stopPropagation={() => onDelete(block.id)} title={$t.canvas.delete}>×</button>
     </div>
   {/if}
 
@@ -437,13 +477,15 @@
   style="left:{lx}px; top:{ly}px; width:{lw}px; height:{lh}px; z-index:{block.z_index}; transform:rotate({localRotation}deg); transform-origin:center;"
   on:pointerdown={onShapePointerDown}
   on:dblclick={onDblClick}
+  on:pointerenter={() => hovered = true}
+  on:pointerleave={() => hovered = false}
 >
-  <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="shape-svg">
+  <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="shape-svg" overflow="visible">
     {#if data.shape === "rect"}
-      <rect x="2" y="2" width="96" height="96" rx="6"
+      <rect x="0" y="0" width="100" height="100" rx="6"
         fill={data.fill} stroke={data.stroke} stroke-width={data.strokeWidth} />
     {:else if data.shape === "circle"}
-      <ellipse cx="50" cy="50" rx="48" ry="48"
+      <ellipse cx="50" cy="50" rx="50" ry="50"
         fill={data.fill} stroke={data.stroke} stroke-width={data.strokeWidth} />
     {:else if data.shape === "triangle"}
       <path d={TRIANGLE}
@@ -467,7 +509,7 @@
         class:text-editor-dark={isTextOnly}
         on:blur={commitText}
         on:keydown={e => { if (e.key === "Escape") commitText(); }}
-        placeholder="Escribe aquí…"
+        placeholder={$t.canvas.writeHere}
       />
     </div>
   {:else if data.text}
@@ -479,13 +521,25 @@
   <!-- Selection controls -->
   {#if selected && !drawMode}
     <div class="ctrl-row">
-      <button class="del-btn" on:click|stopPropagation={() => onDelete(block.id)} title="Eliminar">×</button>
-      <div class="rotate-handle" on:pointerdown={onRotateHandleDown} title="Rotar">↻</div>
+      <button class="del-btn" on:click|stopPropagation={() => onDelete(block.id)} title={$t.canvas.delete}>×</button>
+      <div class="rotate-handle" on:pointerdown={onRotateHandleDown} title={$t.canvas.rotate}>↻</div>
     </div>
-    <div class="handle nw" on:pointerdown={e => onHandlePointerDown(e, "nw")} />
-    <div class="handle ne" on:pointerdown={e => onHandlePointerDown(e, "ne")} />
-    <div class="handle sw" on:pointerdown={e => onHandlePointerDown(e, "sw")} />
-    <div class="handle se" on:pointerdown={e => onHandlePointerDown(e, "se")} />
+    <div class="handle nw" on:pointerdown={e => onHandlePointerDown(e, "nw")}></div>
+    <div class="handle ne" on:pointerdown={e => onHandlePointerDown(e, "ne")}></div>
+    <div class="handle sw" on:pointerdown={e => onHandlePointerDown(e, "sw")}></div>
+    <div class="handle se" on:pointerdown={e => onHandlePointerDown(e, "se")}></div>
+  {/if}
+
+  <!-- Port dots — visible on hover or select, for starting connectors -->
+  {#if (hovered || selected) && !drawMode && !editing}
+    {#each PORT_POSITIONS as p}
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="port-dot"
+        style={p.css}
+        on:pointerdown={e => onPortPointerDown(e, p.port)}
+      ></div>
+    {/each}
   {/if}
 </div>
 {/if}
@@ -608,6 +662,24 @@
   .handle.sw { bottom: -5px; left: -5px;   cursor: sw-resize; }
   .handle.se { bottom: -5px; right: -5px;  cursor: se-resize; }
   .handle:hover { background: var(--accent); }
+
+  /* Port dots */
+  .port-dot {
+    position: absolute;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    cursor: crosshair;
+    z-index: 15;
+    transition: transform 0.1s, background 0.1s;
+    pointer-events: all;
+  }
+  .port-dot:hover {
+    transform: translate(-50%, -50%) scale(1.35) !important;
+    background: #4f46e5;
+  }
 
   /* Connector delete pill */
   .connector-ctrl {

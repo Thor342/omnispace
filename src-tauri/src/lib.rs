@@ -140,7 +140,8 @@ pub fn run() {
 
             std::fs::create_dir_all(&app_dir).expect("Failed to create app data dir");
 
-            let db_path = app_dir.join("omnispace.db");
+            let db_name = if cfg!(debug_assertions) { "omnispace_dev.db" } else { "omnispace.db" };
+            let db_path = app_dir.join(db_name);
             let conn = db::init_db(&db_path).expect("Failed to initialize database");
 
             let files_dir = app_dir.join("files");
@@ -151,8 +152,14 @@ pub fn run() {
                 files_dir,
             });
 
-            // Disable WebView2's native pinch zoom so touchpad pinch
-            // generates WheelEvents (ctrlKey=true) that our canvas handles.
+            // Fix touchpad pinch-to-zoom in WebView2:
+            // wry defaults zoom_hotkeys_enabled=false which sets BOTH
+            // SetIsZoomControlEnabled(false) AND SetIsPinchZoomEnabled(false).
+            // With IsPinchZoomEnabled=false, WebView2 generates NO synthetic
+            // wheel events for pinch gestures — JavaScript never sees them.
+            // Fix: re-enable IsPinchZoomEnabled so WebView2 generates
+            // synthetic Ctrl+wheel events, while keeping IsZoomControlEnabled=false
+            // so WebView2 doesn't apply its own page zoom.
             #[cfg(target_os = "windows")]
             {
                 let window = app.get_webview_window("main").unwrap();
@@ -160,16 +167,17 @@ pub fn run() {
                     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings5;
                     use windows::core::Interface;
                     let result = (|| -> windows::core::Result<()> {
-                        let settings5: ICoreWebView2Settings5 = wv
-                            .controller()
-                            .CoreWebView2()?
-                            .Settings()?
-                            .cast()?;
-                        settings5.SetIsPinchZoomEnabled(false)?;
+                        let settings = wv.controller().CoreWebView2()?.Settings()?;
+                        // Keep page zoom disabled (WebView2 won't apply zoom on Ctrl+wheel)
+                        settings.SetIsZoomControlEnabled(false)?;
+                        // Enable pinch so WebView2 generates synthetic Ctrl+wheel events
+                        // that our canvas JavaScript handler can intercept
+                        let settings5: ICoreWebView2Settings5 = settings.cast()?;
+                        settings5.SetIsPinchZoomEnabled(true)?;
                         Ok(())
                     })();
                     if let Err(e) = result {
-                        eprintln!("WebView2 pinch zoom disable failed: {e:?}");
+                        eprintln!("WebView2 zoom config failed: {e:?}");
                     }
                 }).ok();
             }

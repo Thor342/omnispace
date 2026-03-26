@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { check } from "@tauri-apps/plugin-updater";
   import { relaunch } from "@tauri-apps/plugin-process";
+  import { t } from "../stores/language";
 
   let show = false;
   let version = "";
@@ -57,21 +58,21 @@
 {#if show}
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="update-backdrop" on:click|self={dismiss} on:keydown={e => e.key === "Escape" && dismiss()}>
-    <div class="update-card" role="dialog" aria-modal="true" aria-label="Actualización disponible">
+    <div class="update-card" role="dialog" aria-modal="true" aria-label={$t.updater.available}>
       <div class="update-header">
         <span class="update-icon">🚀</span>
         <div class="update-titles">
-          <p class="update-label">Actualización disponible</p>
+          <p class="update-label">{$t.updater.available}</p>
           <p class="update-version">OmniSpace {version}</p>
         </div>
         {#if !installing}
-          <button class="update-dismiss" on:click={dismiss} title="Recordar después">✕</button>
+          <button class="update-dismiss" on:click={dismiss} title={$t.updater.remindLater}>✕</button>
         {/if}
       </div>
 
       {#if notes}
         <div class="update-notes">
-          <p class="notes-title">Novedades</p>
+          <p class="notes-title">{$t.updater.whatsNew}</p>
           <p class="notes-body">{notes}</p>
         </div>
       {/if}
@@ -85,12 +86,12 @@
           <div class="update-progress-bar" style="width:{progress}%"></div>
         </div>
         <p class="update-status">
-          {progress < 100 ? `Descargando… ${progress}%` : "Instalando…"}
+          {progress < 100 ? $t.updater.downloading(progress) : $t.updater.installing}
         </p>
       {:else}
         <div class="update-actions">
-          <button class="btn-later" on:click={dismiss}>Después</button>
-          <button class="btn-install" on:click={install}>Instalar ahora</button>
+          <button class="btn-later" on:click={dismiss}>{$t.updater.later}</button>
+          <button class="btn-install" on:click={install}>{$t.updater.installNow}</button>
         </div>
       {/if}
     </div>

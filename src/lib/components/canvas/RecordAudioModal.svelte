@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
+  import { t } from "../../stores/language";
 
   export let spaceId: string;
   export let onSave: (storedPath: string, name: string, size: number) => void;
@@ -74,9 +75,9 @@
         permState = "denied";
         error = "";  // shown via perm UI, not error text
       } else if (name === "NotFoundError") {
-        error = "No se encontró ningún micrófono conectado";
+        error = $t.recordAudio.micNotFound;
       } else {
-        error = `No se pudo acceder al micrófono: ${name}`;
+        error = $t.recordAudio.micError(name);
       }
       return false;
     }
@@ -163,7 +164,7 @@
       );
       onSave(file.stored_path, file.name, file.size);
     } catch (e) {
-      error = `Error al guardar: ${e}`;
+      error = $t.recordAudio.saveError(e);
       saving = false;
     }
   }
@@ -188,7 +189,7 @@
 
 <div class="modal">
   <div class="modal-header">
-    <span class="modal-title">🎙 Grabar audio</span>
+    <span class="modal-title">{$t.recordAudio.title}</span>
     <button class="close-btn" on:click={onClose}>×</button>
   </div>
 
@@ -198,14 +199,10 @@
       <!-- ── Permiso denegado ── -->
       <div class="perm-denied">
         <div class="perm-icon">🎙</div>
-        <p class="perm-title">Acceso al micrófono denegado</p>
-        <p class="perm-hint">
-          Para grabar audio necesitas habilitar el micrófono.<br/>
-          Haz clic en el botón de abajo, activa el micrófono para esta aplicación
-          y luego regresa — el modal se actualizará solo.
-        </p>
+        <p class="perm-title">{$t.recordAudio.micDenied}</p>
+        <p class="perm-hint">{$t.recordAudio.permHint}</p>
         <button class="btn-settings" on:click={openMicSettings}>
-          ⚙ Abrir configuración del micrófono
+          {$t.recordAudio.openMicSettings}
         </button>
       </div>
 
@@ -223,7 +220,7 @@
         {:else}
           <canvas bind:this={canvasEl} width="340" height="60" class="wave-canvas idle"></canvas>
           <span class="idle-hint">
-            {permState === "checking" ? "Verificando permisos…" : "Presiona grabar para comenzar"}
+            {permState === "checking" ? $t.recordAudio.checkingPerms : $t.recordAudio.pressRecord}
           </span>
         {/if}
       </div>
@@ -235,20 +232,20 @@
 
   <div class="modal-footer">
     {#if permState === "denied"}
-      <button class="btn-close-perm" on:click={onClose}>Cerrar</button>
+      <button class="btn-close-perm" on:click={onClose}>{$t.recordAudio.close}</button>
 
     {:else if state === "idle"}
       <button class="btn-record" on:click={startRecording} disabled={permState === "checking"}>
-        ⏺ Grabar
+        {$t.recordAudio.record}
       </button>
 
     {:else if state === "recording"}
-      <button class="btn-stop" on:click={stopRecording}>⏹ Detener</button>
+      <button class="btn-stop" on:click={stopRecording}>{$t.recordAudio.stop}</button>
 
     {:else}
-      <button class="btn-discard" on:click={discard}>↩ Volver a grabar</button>
+      <button class="btn-discard" on:click={discard}>{$t.recordAudio.discard}</button>
       <button class="btn-save" on:click={save} disabled={saving}>
-        {saving ? "Guardando…" : "💾 Guardar"}
+        {saving ? $t.recordAudio.saving : $t.recordAudio.save}
       </button>
     {/if}
   </div>

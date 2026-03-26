@@ -5,6 +5,7 @@
   import type { FileContent } from "../../types";
   import DOMPurify from "dompurify";
   import PdfBookView from "./PdfBookView.svelte";
+  import { t } from "../../stores/language";
 
   export let content: string;
   export let onUpdate: ((content: string) => void) | undefined = undefined;
@@ -316,14 +317,14 @@
   {#if !data.stored_path}
     <div class="empty-file">
       <span>📄</span>
-      <p>Sin documento</p>
+      <p>{$t.canvas.noDoc}</p>
     </div>
 
   {:else if data.file_type === "image"}
     {#if imageSrc}
       <img src={imageSrc} alt={data.name} class="file-img" />
     {:else}
-      <div class="empty-file"><span>🖼️</span><p>Cargando imagen…</p></div>
+      <div class="empty-file"><span>🖼️</span><p>{$t.canvas.loadingImage}</p></div>
     {/if}
 
   {:else if data.file_type === "video"}
@@ -339,20 +340,20 @@
         <span class="pdf-ph-icon">📄</span>
         <span class="pdf-ph-name">{data.name}</span>
         <span class="pdf-ph-size">{formatSize(data.size)}</span>
-        <button class="pdf-ph-btn" on:click={openPdf}>Ver PDF</button>
+        <button class="pdf-ph-btn" on:click={openPdf}>{$t.canvas.viewPdf}</button>
       </div>
     {:else}
       <div class="pdf-wrapper">
         {#if pdfLoading}
-          <div class="doc-loading">Cargando PDF…</div>
+          <div class="doc-loading">{$t.canvas.loadingPdf}</div>
         {:else if pdfBlobUrl}
           <iframe src="{pdfBlobUrl}#toolbar=0&view=FitH" class="file-pdf" title={data.name}></iframe>
           <div class="pdf-btn-group">
-            <button class="pdf-action-btn" on:click={() => showBookView = true} title="Vista libro">📖</button>
-            <button class="pdf-action-btn" on:click={() => invoke('open_file', { path: data.stored_path })} title="Abrir con app del sistema">↗</button>
+            <button class="pdf-action-btn" on:click={() => showBookView = true} title={$t.canvas.bookView}>📖</button>
+            <button class="pdf-action-btn" on:click={() => invoke('open_file', { path: data.stored_path })} title={$t.canvas.openSystem}>↗</button>
           </div>
         {:else}
-          <div class="doc-loading">Error al cargar PDF</div>
+          <div class="doc-loading">{$t.canvas.errorPdf}</div>
         {/if}
       </div>
       {#if showBookView}
@@ -366,19 +367,19 @@
       <div class="doc-toolbar">
         <div class="doc-actions">
           {#if !wordEditing}
-            <button class="doc-btn" on:click={async () => { wordEditing = true; await tick(); if (wordEditEl) { wordEditEl.innerHTML = wordHtml; wordEditEl.focus(); } }}>✏ Editar</button>
+            <button class="doc-btn" on:click={async () => { wordEditing = true; await tick(); if (wordEditEl) { wordEditEl.innerHTML = wordHtml; wordEditEl.focus(); } }}>{$t.canvas.editDoc}</button>
           {:else}
             <button class="doc-btn accent" disabled={wordSaving} on:click={saveWordEdit}>
-              {wordSaving ? "⏳ Guardando…" : "💾 Guardar"}
+              {wordSaving ? $t.canvas.saving : $t.canvas.saveDoc}
             </button>
-            <button class="doc-btn" on:click={() => wordEditing = false}>✕ Cancelar</button>
+            <button class="doc-btn" on:click={() => wordEditing = false}>{$t.canvas.cancelDoc}</button>
           {/if}
-          <button class="doc-btn" on:click={() => invoke('open_file', { path: data.stored_path })} title="Abrir con Word">↗</button>
+          <button class="doc-btn" on:click={() => invoke('open_file', { path: data.stored_path })} title={$t.canvas.openWord}>↗</button>
         </div>
       </div>
 
       {#if wordLoading}
-        <div class="doc-loading">Cargando documento…</div>
+        <div class="doc-loading">{$t.canvas.loadingDoc}</div>
       {:else if wordEditing}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div
@@ -395,7 +396,7 @@
         </div>
       {:else}
         <div class="word-view">
-          {@html wordHtml || "<p style='color:var(--text-muted);text-align:center;margin-top:40px'>Documento vacío</p>"}
+          {@html wordHtml || `<p style='color:var(--text-muted);text-align:center;margin-top:40px'>${$t.canvas.emptyDoc}</p>`}
         </div>
       {/if}
     </div>
@@ -412,15 +413,15 @@
         <div class="doc-actions">
           {#if excelEditing}
             <button class="doc-btn accent" disabled={excelSaving} on:click={saveExcel}>
-              {excelSaving ? "⏳ Guardando…" : "💾 Guardar"}
+              {excelSaving ? $t.canvas.saving : $t.canvas.saveDoc}
             </button>
           {/if}
-          <button class="doc-btn" on:click={() => invoke('open_file', { path: data.stored_path })} title="Abrir con Excel">↗</button>
+          <button class="doc-btn" on:click={() => invoke('open_file', { path: data.stored_path })} title={$t.canvas.openExcel}>↗</button>
         </div>
       </div>
 
       {#if excelLoading}
-        <div class="doc-loading">Cargando hoja de cálculo…</div>
+        <div class="doc-loading">{$t.canvas.loadingSheet}</div>
       {:else}
         <div class="excel-scroll">
           <table class="excel-table">
@@ -474,7 +475,7 @@
       </div>
       <button class="ppt-open-btn" on:click={() => invoke('open_file', { path: data.stored_path })}>
         <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
-        Abrir con PowerPoint
+        {$t.canvas.openPpt}
       </button>
     </div>
 
@@ -579,6 +580,7 @@
 
   .file-img  { flex: 1; width: 100%; height: 100%; object-fit: cover; object-position: top; min-height: 0; display: block; }
   .file-video { flex: 1; width: 100%; height: 100%; min-height: 0; display: block; }
+  .file-video::-webkit-media-controls-overflow-button { display: none; }
 
   /* ── PDF placeholder (before user opens) ── */
   .pdf-placeholder {

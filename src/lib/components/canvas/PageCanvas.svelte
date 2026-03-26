@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { t } from "../../stores/language";
   import { invoke } from "@tauri-apps/api/core";
   import {
     getBlocks, createBlock, updateBlockPosition, updateBlockContent,
@@ -29,7 +30,7 @@
   let drawMode = false;
   let eraseMode = false;
   let shapeMode = false;
-  let shapeType = "rect";
+  let shapeType = "";
 
   // Shape drag-to-create
   let shapeDragging = false;
@@ -45,6 +46,7 @@
   let lineStyle: "solid" | "dashed" | "dotted" = "solid";
   let penColor = "#6366f1";
   let penWidth = 3;
+  let penOpacity = 100;
   let eraserSize = 24; // canvas units
 
   // Eraser cursor indicator (screen space)
@@ -83,6 +85,7 @@
   let gPinchDist = 0;
   let gPinchZoom = 1.0;
   let gPinchCX = 0, gPinchCY = 0;
+  let gPinchMidX = 0, gPinchMidY = 0; // midpoint tracking for two-finger pan
   // Pending scroll correction — applied after Svelte re-renders the zoomed canvas
   let pendingScroll: { x: number; y: number } | null = null;
 
@@ -91,6 +94,7 @@
     viewportEl.scrollLeft = pendingScroll.x;
     viewportEl.scrollTop  = pendingScroll.y;
     pendingScroll = null;
+    redrawAll();
   }
 
   function onGlobalPointerDown(e: PointerEvent) {
@@ -101,6 +105,7 @@
       gPinchZoom = zoom;
       gPinchCX = (pts[0].x + pts[1].x) / 2;
       gPinchCY = (pts[0].y + pts[1].y) / 2;
+      gPinchMidX = gPinchCX; gPinchMidY = gPinchCY;
       gPinching = true;
       isPanning = false;
     }
@@ -117,19 +122,30 @@
     const pts = [...gPtrs.values()];
     const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
     const newZoom = clampZoom(gPinchZoom * (dist / gPinchDist));
-    if (newZoom === zoom) return;
+
+    const midX = (pts[0].x + pts[1].x) / 2;
+    const midY = (pts[0].y + pts[1].y) / 2;
+    const panDX = gPinchMidX - midX;
+    const panDY = gPinchMidY - midY;
+    gPinchMidX = midX; gPinchMidY = midY;
 
     const rect = viewportEl.getBoundingClientRect();
     const mx = gPinchCX - rect.left;
     const my = gPinchCY - rect.top;
     const prevZoom = zoom;
 
-    pendingScroll = {
-      x: (viewportEl.scrollLeft + mx) / prevZoom * newZoom - mx,
-      y: (viewportEl.scrollTop  + my) / prevZoom * newZoom - my,
-    };
-    zoom = newZoom;
-    tick().then(applyPendingScroll);
+    if (newZoom !== zoom) {
+      pendingScroll = {
+        x: (viewportEl.scrollLeft + mx) / prevZoom * newZoom - mx + panDX,
+        y: (viewportEl.scrollTop  + my) / prevZoom * newZoom - my + panDY,
+      };
+      zoom = newZoom;
+      tick().then(applyPendingScroll);
+    } else if (panDX !== 0 || panDY !== 0) {
+      // Two-finger pan (no zoom change)
+      viewportEl.scrollLeft += panDX;
+      viewportEl.scrollTop  += panDY;
+    }
   }
 
   function onGlobalPointerUp(e: PointerEvent) {
@@ -197,8 +213,12 @@
 
   // ── Helpers ───────────────────────────────────────────
   function clampZoom(z: number) {
-    return Math.round(Math.min(3, Math.max(0.2, z)) * 100) / 100;
+    return Math.round(Math.min(5, Math.max(0.05, z)) * 100) / 100;
   }
+
+  // Canvas pixel dimensions — scale with zoom for crisp rendering, capped at GPU safe limit
+  $: canvasPxW = Math.min(8192, Math.round(CW * zoom));
+  $: canvasPxH = Math.min(8192, Math.round(CH * zoom));
 
   function isCanvasBg(el: EventTarget | null): boolean {
     if (!(el instanceof HTMLElement)) return false;
@@ -219,6 +239,14 @@
     if (!viewportEl) return;
     const overCanvas = viewportEl.contains(e.target as Node);
     if (!e.ctrlKey && !overCanvas) return; // non-pinch outside viewport: ignore
+
+    // Si el cursor está sobre un elemento scrollable interno (ej. lista de tareas),
+    // dejar que el scroll ocurra naturalmente en ese elemento.
+    if (!e.ctrlKey) {
+      const scrollable = (e.target as Element).closest?.('.task-list');
+      if (scrollable && scrollable.scrollHeight > scrollable.clientHeight) return;
+    }
+
     e.preventDefault();
     // Normalize: deltaMode 1 = lines (~16px), 0 = pixels
     const factor = e.deltaMode === 1 ? 16 : 1;
@@ -262,10 +290,28 @@
 
     // Single finger / mouse
     if (drawMode) return; // canvas handles drawing
+
+    // Connector mode: intercept BEFORE isCanvasBg so clicks ON shapes also start connections
+    if (shapeMode && isConnectorType(shapeType)) {
+      (document.activeElement as HTMLElement)?.blur();
+      e.preventDefault();
+      selectedBlockId = null;
+      const [cx, cy] = pointerToCanvas(e);
+      shapeDragging = true;
+      shapeStartX = cx; shapeStartY = cy;
+      shapePreview = { x: cx, y: cy, w: 0, h: 0 };
+      shapeEndX = cx; shapeEndY = cy;
+      const snap = findSnapTarget(cx, cy, blocks);
+      createSnapStart = snap;
+      if (snap) { shapeStartX = snap.x; shapeStartY = snap.y; }
+      return;
+    }
+
     if (!isCanvasBg(e.target)) return; // block handles itself
 
-    // Shape drag-to-create: start
+    // Shape drag-to-create: start (non-connector shapes only on canvas bg)
     if (shapeMode) {
+      if (!shapeType) return; // no type selected yet — wait for user to pick one
       (document.activeElement as HTMLElement)?.blur();
       e.preventDefault();
       selectedBlockId = null; // deselect previous shape when starting to draw a new one
@@ -275,11 +321,6 @@
       shapeStartY = cy;
       shapePreview = { x: cx, y: cy, w: 0, h: 0 };
       shapeEndX = cx; shapeEndY = cy;
-      if (isConnectorType(shapeType)) {
-        const snap = findSnapTarget(cx, cy, blocks);
-        createSnapStart = snap;
-        if (snap) { shapeStartX = snap.x; shapeStartY = snap.y; }
-      }
       return;
     }
 
@@ -488,6 +529,13 @@
 
   async function onKeyDown(e: KeyboardEvent) {
     if (e.key === "Escape") { selectedBlockId = null; return; }
+    if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      e.preventDefault();
+      if (canUndo) undo();
+      return;
+    }
     if (e.key === "Delete" || e.key === "Backspace") {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
@@ -564,7 +612,7 @@
     drawing = true;
     const [x, y] = getPos(e);
     if (eraseMode) { erasePushedHistory = false; eraseAt(x, y); return; }
-    currentStroke = { color: penColor, width: penWidth * (e.pressure || 1), points: [[x, y]], layer: "top" };
+    currentStroke = { color: penColor, width: penWidth * (e.pressure || 1), points: [[x, y]], layer: "top", opacity: penOpacity };
   }
 
   function onCanvasPointerMove(e: PointerEvent) {
@@ -613,7 +661,7 @@
     calendar: [820, 580], clock: [300, 220], shape: [200, 200],
   };
   const DEFAULT_CONTENT: Record<BlockType, object> = {
-    note: { title: "Nueva nota", text: "" },
+    note: { title: $t.canvas.newNote, text: "" },
     link: { url: "", title: "", link_type: "general" },
     file: { stored_path: "", name: "", file_type: "other", size: 0 },
     task: { tasks: [] },
@@ -644,26 +692,38 @@
 
   async function addBlock(type: BlockType, hint?: string) {
     const offset = (blocks.length % 8) * 28;
-    const x = 80 + offset, y = 80 + offset;
+    // Center on current viewport position
+    const vx = viewportEl ? (viewportEl.scrollLeft + viewportEl.clientWidth  / 2) / zoom : 300;
+    const vy = viewportEl ? (viewportEl.scrollTop  + viewportEl.clientHeight / 2) / zoom : 300;
+
     if (hint === "record-audio") { showRecordModal = true; return; }
-    if (type === "file") { await addFileBlock(x, y, hint); return; }
+    if (type === "file") {
+      const [fw, fh] = DEFAULT_SIZES.file;
+      await addFileBlock(Math.max(20, vx - fw/2 + offset), Math.max(20, vy - fh/2 + offset), hint);
+      return;
+    }
     if (hint === "youtube") {
-      const block = await createBlock(pageId, "link", x, y, 560, 380,
-        JSON.stringify({ url: "", title: "YouTube", link_type: "youtube" }));
+      const [w, h] = [560, 380];
+      const x = Math.max(20, vx - w/2 + offset), y = Math.max(20, vy - h/2 + offset);
+      const block = await createBlock(pageId, "link", x, y, w, h,
+        JSON.stringify({ url: "", title: "", link_type: "youtube" }));
       pushHistory({ type: "block_added", blockId: block.id });
       maxZ = block.z_index;
       blocks = [...blocks, block];
       return;
     }
     if (hint === "canva") {
-      const block = await createBlock(pageId, "link", x, y, 600, 440,
-        JSON.stringify({ url: "", title: "Canva", link_type: "canva" }));
+      const [w, h] = [600, 440];
+      const x = Math.max(20, vx - w/2 + offset), y = Math.max(20, vy - h/2 + offset);
+      const block = await createBlock(pageId, "link", x, y, w, h,
+        JSON.stringify({ url: "", title: "", link_type: "canva" }));
       pushHistory({ type: "block_added", blockId: block.id });
       maxZ = block.z_index;
       blocks = [...blocks, block];
       return;
     }
     const [w, h] = DEFAULT_SIZES[type];
+    const x = Math.max(20, vx - w/2 + offset), y = Math.max(20, vy - h/2 + offset);
     const block = await createBlock(pageId, type, x, y, w, h, JSON.stringify(DEFAULT_CONTENT[type]));
     pushHistory({ type: "block_added", blockId: block.id });
     maxZ = block.z_index;
@@ -676,21 +736,21 @@
     let defaultSize: [number, number] = DEFAULT_SIZES.file;
 
     if (hint === "image") {
-      filters = [{ name: "Imágenes", extensions: ["jpg","jpeg","png","gif","webp","bmp","svg"] }];
+      filters = [{ name: $t.canvas.images, extensions: ["jpg","jpeg","png","gif","webp","bmp","svg"] }];
       defaultSize = [480, 360];
     } else if (hint === "video") {
-      filters = [{ name: "Videos", extensions: ["mp4","webm","mkv","avi","mov","ogv"] }];
+      filters = [{ name: $t.canvas.videos, extensions: ["mp4","webm","mkv","avi","mov","ogv"] }];
       defaultSize = [560, 380];
     } else if (hint === "audio") {
-      filters = [{ name: "Audio", extensions: ["mp3","wav","ogg","flac","m4a","aac","opus","wma"] }];
+      filters = [{ name: $t.canvas.audioFiles, extensions: ["mp3","wav","ogg","flac","m4a","aac","opus","wma"] }];
       defaultSize = [360, 160];
     } else {
       filters = [
-        { name: "Documentos", extensions: ["pdf","doc","docx","xls","xlsx","ppt","pptx"] },
+        { name: $t.canvas.documents, extensions: ["pdf","doc","docx","xls","xlsx","ppt","pptx"] },
         { name: "PDF",        extensions: ["pdf"] },
-        { name: "Word",       extensions: ["doc","docx"] },
-        { name: "Excel",      extensions: ["xls","xlsx"] },
-        { name: "PowerPoint", extensions: ["ppt","pptx"] },
+        { name: $t.canvas.word,       extensions: ["doc","docx"] },
+        { name: $t.canvas.excel,      extensions: ["xls","xlsx"] },
+        { name: $t.canvas.powerpoint, extensions: ["ppt","pptx"] },
       ];
     }
 
@@ -788,7 +848,7 @@
     }
   }
 
-  function updateConnectedLines(movedBlock: Block) {
+  function updateConnectedLines(movedBlock: Block, persist = true) {
     for (const b of blocks) {
       if (b.block_type !== "shape") continue;
       let d: any;
@@ -808,9 +868,34 @@
       const nx = Math.min(d.x1, d.x2), ny = Math.min(d.y1, d.y2);
       const nw = Math.max(Math.abs(d.x2-d.x1), 10), nh = Math.max(Math.abs(d.y2-d.y1), 10);
       blocks = blocks.map(bl => bl.id === b.id ? {...bl, content: newContent, x: nx, y: ny, width: nw, height: nh} : bl);
-      updateBlockContent(b.id, newContent);
-      updateBlockPosition(b.id, nx, ny, nw, nh);
+      if (persist) {
+        updateBlockContent(b.id, newContent);
+        updateBlockPosition(b.id, nx, ny, nw, nh);
+      }
     }
+  }
+
+  // Lightweight move callback — updates block position during drag, no DB writes.
+  // CanvasShape reads connected endpoints directly from allBlocks, so no need to
+  // call updateConnectedLines here. RAF is intentionally NOT used to avoid firing
+  // after drag-end and overwriting the final persisted position.
+  function handleBlockMove(blockId: string, x: number, y: number) {
+    const idx = blocks.findIndex(bl => bl.id === blockId);
+    if (idx === -1) return;
+    const b = blocks[idx];
+    if (b.x === x && b.y === y) return;
+    blocks = blocks.map(bl => bl.id === blockId ? { ...bl, x, y } : bl);
+  }
+
+  // Start a connector drag from a port dot on a shape (no tool selection needed)
+  function handleConnectorStart(blockId: string, port: string, x: number, y: number) {
+    if (!isConnectorType(shapeType)) shapeType = "arrow";
+    selectedBlockId = null;
+    shapeDragging = true;
+    shapeStartX = x; shapeStartY = y;
+    shapePreview = { x, y, w: 0, h: 0 };
+    shapeEndX = x; shapeEndY = y;
+    createSnapStart = { id: blockId, port, x, y };
   }
 
   function clearStrokes() {
@@ -907,18 +992,19 @@
         <canvas
           class="drawing-canvas"
           class:draw-active={drawMode}
-          width={CW} height={CH}
+          width={canvasPxW} height={canvasPxH}
           bind:this={canvasEl}
           on:pointerdown={onCanvasPointerDown}
           on:pointermove={onCanvasPointerMove}
           on:pointerup={onCanvasPointerUp}
-          style="cursor:{drawMode ? (eraseMode ? 'none' : 'crosshair') : 'default'}"
+          style="width:{CW}px; height:{CH}px; cursor:{drawMode ? (eraseMode ? 'none' : 'crosshair') : 'default'}"
         ></canvas>
 
         <canvas
           class="marker-canvas"
-          width={CW} height={CH}
+          width={canvasPxW} height={canvasPxH}
           bind:this={markerCanvasEl}
+          style="width:{CW}px; height:{CH}px;"
         ></canvas>
 
         <!-- Connector (line/arrow) drag preview -->
@@ -999,7 +1085,10 @@
               {zoom}
               selected={selectedBlockId === block.id}
               multiSelected={selectedBlockIds.has(block.id)}
+              connectorMode={shapeMode && isConnectorType(shapeType)}
+              onConnectorStart={handleConnectorStart}
               onUpdate={handleBlockUpdate}
+              onMove={handleBlockMove}
               onDelete={handleBlockDelete}
               onBringToFront={bringToFront}
               onSelect={selectBlock}
@@ -1012,7 +1101,9 @@
               {zoom}
               selected={selectedBlockId === block.id}
               multiSelected={selectedBlockIds.has(block.id)}
+              connectorMode={shapeMode && isConnectorType(shapeType)}
               onUpdate={handleBlockUpdate}
+              onMove={handleBlockMove}
               onDelete={handleBlockDelete}
               onBringToFront={bringToFront}
               onSelect={selectBlock}
@@ -1029,8 +1120,8 @@
             contenteditable="true"
             role="textbox"
             tabindex="0"
-            aria-label="Escribe texto"
-            data-placeholder="Escribe algo…"
+            aria-label={$t.canvas.writeSomething}
+            data-placeholder={$t.canvas.writeSomething}
             bind:this={textDraftEl}
             on:blur={onTextDraftBlur}
             on:keydown={onTextDraftKey}
@@ -1059,6 +1150,7 @@
     bind:shapeStrokeWidth
     bind:penColor
     bind:penWidth
+    bind:penOpacity
     bind:zoom
     bind:eraserSize
     bind:selectMode
@@ -1077,6 +1169,7 @@
 
   .canvas-viewport {
     flex: 1; overflow: auto;
+    touch-action: none;
     background-color: var(--bg-base);
     background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
     background-size: 28px 28px;

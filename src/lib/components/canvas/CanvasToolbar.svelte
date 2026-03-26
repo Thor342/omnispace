@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { BlockType } from "../../types";
+  import { t } from "../../stores/language";
 
   export let drawMode = false;
   export let eraseMode = false;
@@ -10,6 +11,7 @@
   export let shapeStrokeWidth = 2;
   export let penColor = "#6366f1";
   export let penWidth = 3;
+  export let penOpacity = 100;
   export let eraserSize = 24;
   export let zoom = 1.0;
   export let canUndo = false;
@@ -54,19 +56,19 @@
     { type: "arrow",    icon: "→" },
   ];
 
-  const BLOCKS: { type: BlockType; hint?: string; icon: string; label: string; sep?: boolean }[] = [
-    { type: "note",     icon: "📝", label: "Nota" },
-    { type: "link",     icon: "🔗", label: "Enlace" },
-    { type: "file",     hint: "image",    icon: "🖼️", label: "Imagen" },
-    { type: "file",     hint: "video",    icon: "🎬", label: "Video" },
-    { type: "file",     hint: "audio",    icon: "🎵", label: "Audio" },
-    { type: "file",     hint: "document", icon: "📄", label: "Documento" },
-    { type: "task",     icon: "✅", label: "Tareas" },
-    { type: "calendar", icon: "📅", label: "Calendario" },
-    { type: "clock",    icon: "🕐", label: "Reloj" },
-    { type: "file", hint: "record-audio", icon: "🎙", label: "Grabar audio", sep: true },
-    { type: "link", hint: "youtube", icon: `<svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="5" fill="#FF0000"/><polygon points="9.5,7 9.5,17 17.5,12" fill="#fff"/></svg>`, label: "YouTube", sep: true },
-    { type: "link", hint: "canva",   icon: `<svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="#7D2AE8"/><path d="M15.5 8.5c-.6-.6-1.5-1-2.5-1-2.2 0-4 1.8-4 4s1.8 4 4 4c1 0 1.9-.4 2.5-1" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`, label: "Canva" },
+  $: BLOCKS = [
+    { type: "note"     as BlockType, icon: "📝", label: $t.toolbar.note },
+    { type: "link"     as BlockType, icon: "🔗", label: $t.toolbar.link },
+    { type: "file"     as BlockType, hint: "image",    icon: "🖼️", label: $t.toolbar.image },
+    { type: "file"     as BlockType, hint: "video",    icon: "🎬", label: $t.toolbar.video },
+    { type: "file"     as BlockType, hint: "audio",    icon: "🎵", label: $t.toolbar.audio },
+    { type: "file"     as BlockType, hint: "document", icon: "📄", label: $t.toolbar.document },
+    { type: "task"     as BlockType, icon: "✅", label: $t.toolbar.tasks },
+    { type: "calendar" as BlockType, icon: "📅", label: $t.toolbar.calendar },
+    { type: "clock"    as BlockType, icon: "🕐", label: $t.toolbar.clock },
+    { type: "file"     as BlockType, hint: "record-audio", icon: "🎙", label: $t.toolbar.recordAudio, sep: true },
+    { type: "link"     as BlockType, hint: "youtube", icon: `<svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="5" fill="#FF0000"/><polygon points="9.5,7 9.5,17 17.5,12" fill="#fff"/></svg>`, label: "YouTube", sep: true },
+    { type: "link"     as BlockType, hint: "canva",   icon: `<svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="12" fill="#7D2AE8"/><path d="M15.5 8.5c-.6-.6-1.5-1-2.5-1-2.2 0-4 1.8-4 4s1.8 4 4 4c1 0 1.9-.4 2.5-1" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`, label: "Canva" },
   ];
 
   function setZoom(z: number) { zoom = Math.round(Math.min(3, Math.max(0.2, z)) * 100) / 100; }
@@ -91,20 +93,22 @@
   <div class="sep" />
   {#if drawMode}
     <!-- ── Draw mode ── -->
-    <button class="tool-btn" on:click={() => { drawMode = false; eraseMode = false; }}>✖ Salir</button>
+    <button class="tool-btn" on:click={() => { drawMode = false; eraseMode = false; }}>✖</button>
+    <div class="sep" />
+    <button class="tool-btn" disabled={!canUndo} on:click={onUndo} title={$t.toolbar.undo}>↩</button>
     <div class="sep" />
 
     <button class="tool-btn" class:active={!eraseMode} on:click={() => eraseMode = false}
-      title="Lápiz">✏️ Lápiz</button>
+      title={$t.toolbar.pencil}>✏️ {$t.toolbar.pencil}</button>
     <button class="tool-btn" class:active={eraseMode}  on:click={() => eraseMode = true}
-      title="Borrador">◻ Borrador</button>
+      title={$t.toolbar.eraser}>◻ {$t.toolbar.eraser}</button>
 
     {#if eraseMode}
       <div class="sep" />
-      <span class="lbl">Tamaño:</span>
+      <span class="lbl">{$t.toolbar.size}</span>
       {#each ERASER_SIZES as es}
         <button class="size-btn" class:active={eraserSize === es.size}
-          on:click={() => eraserSize = es.size} title="Borrador {es.label}">{es.label}</button>
+          on:click={() => eraserSize = es.size} title="{$t.toolbar.eraser} {es.label}">{es.label}</button>
       {/each}
     {:else}
       <div class="sep" />
@@ -115,39 +119,38 @@
       </div>
       <div class="sep" />
       <div class="width-row">
-        <span class="lbl">Grosor</span>
+        <span class="lbl">{$t.toolbar.thickness}</span>
         <input type="range" min="1" max="20" bind:value={penWidth} />
         <span class="lbl">{penWidth}px</span>
+      </div>
+      <div class="sep" />
+      <div class="width-row">
+        <span class="lbl">{$t.toolbar.blur}</span>
+        <input type="range" min="10" max="100" bind:value={penOpacity} />
+        <span class="lbl">{penOpacity}%</span>
       </div>
     {/if}
 
     <div class="sep" />
-    <button class="tool-btn danger" on:click={onClearStrokes}>🗑 Limpiar</button>
+    <button class="tool-btn danger" on:click={onClearStrokes}>🗑</button>
 
   {:else if shapeMode}
     <!-- ── Shape mode ── -->
-    <button class="tool-btn" on:click={() => shapeMode = false}>✖ Salir</button>
+    <button class="tool-btn" on:click={() => { shapeMode = false; shapeType = ""; }}>✖</button>
     <div class="sep" />
-    {#if editingShape}
-      <span class="lbl editing-lbl">◻ Editando figura</span>
-      <div class="sep" />
-    {:else}
-      <span class="lbl">Figura:</span>
-    {/if}
-    {#if !editingShape}
-      {#each SHAPE_TYPES as s}
-        <button
-          class="tool-btn shape-type-btn"
-          class:active={shapeType === s.type}
-          on:click={() => shapeType = s.type}
-          title={s.type}
-        >{s.icon}</button>
-      {/each}
-      <div class="sep" />
-    {/if}
+    <span class="lbl">{$t.toolbar.shape}</span>
+    {#each SHAPE_TYPES as s}
+      <button
+        class="tool-btn shape-type-btn"
+        class:active={shapeType === s.type}
+        on:click={() => shapeType = s.type}
+        title={s.type}
+      >{s.icon}</button>
+    {/each}
+    <div class="sep" />
 
     {#if shapeType !== "line" && shapeType !== "arrow"}
-    <span class="lbl">Relleno:</span>
+    <span class="lbl">{$t.toolbar.fill}</span>
     <div class="color-row">
       {#each FILL_COLORS as c}
         <button
@@ -155,61 +158,61 @@
           class:sel={shapeFill === c}
           style={c === "transparent" ? "background:none;border:1px dashed #9ca3af;font-size:10px;color:#9ca3af" : `background:${c};border:1px solid rgba(0,0,0,0.15)`}
           on:click={() => shapeFill = c}
-          title={c === "transparent" ? "Sin relleno" : c}
+          title={c === "transparent" ? $t.toolbar.noFill : c}
         >{c === "transparent" ? "∅" : ""}</button>
       {/each}
-      <input type="color" class="color-pick-input" bind:value={shapeFill} title="Personalizado" />
+      <input type="color" class="color-pick-input" bind:value={shapeFill} title={$t.toolbar.custom} />
     </div>
     <div class="sep" />
     {/if}
 
-    <span class="lbl">Contorno:</span>
+    <span class="lbl">{$t.toolbar.stroke}</span>
     <div class="color-row">
       {#each STROKE_COLORS as c}
         <button class="color-sw" class:sel={shapeStroke === c} style="background:{c}" on:click={() => shapeStroke = c} />
       {/each}
-      <input type="color" class="color-pick-input" bind:value={shapeStroke} title="Personalizado" />
+      <input type="color" class="color-pick-input" bind:value={shapeStroke} title={$t.toolbar.custom} />
     </div>
     <div class="sep" />
 
-    <span class="lbl">Grosor:</span>
+    <span class="lbl">{$t.toolbar.strokeWidth}</span>
     <input type="range" min="1" max="12" bind:value={shapeStrokeWidth} class="stroke-range" />
     <span class="lbl">{shapeStrokeWidth}px</span>
 
     <!-- Line style: shown for connectors and when creating line/arrow -->
     {#if shapeType === "line" || shapeType === "arrow" || editingConnector}
       <div class="sep" />
-      <span class="lbl">Línea:</span>
-      <button class="style-btn" class:active={lineStyle === "solid"}  on:click={() => lineStyle = "solid"}  title="Sólida">—</button>
-      <button class="style-btn" class:active={lineStyle === "dashed"} on:click={() => lineStyle = "dashed"} title="Guiones">╌</button>
-      <button class="style-btn" class:active={lineStyle === "dotted"} on:click={() => lineStyle = "dotted"} title="Puntos">···</button>
+      <span class="lbl">{$t.toolbar.line}</span>
+      <button class="style-btn" class:active={lineStyle === "solid"}  on:click={() => lineStyle = "solid"}  title={$t.toolbar.solid}>—</button>
+      <button class="style-btn" class:active={lineStyle === "dashed"} on:click={() => lineStyle = "dashed"} title={$t.toolbar.dashed}>╌</button>
+      <button class="style-btn" class:active={lineStyle === "dotted"} on:click={() => lineStyle = "dotted"} title={$t.toolbar.dotted}>···</button>
     {/if}
 
   {:else}
     <!-- ── Normal mode ── -->
-    <button class="tool-btn" class:active={!selectMode} on:click={() => selectMode = false} title="Mano: arrastrar lienzo">🖐</button>
-    <button class="tool-btn" class:active={selectMode} on:click={() => selectMode = true} title="Selección múltiple">↖</button>
+    <button class="tool-btn" class:active={!selectMode} on:click={() => selectMode = false} title={$t.toolbar.hand}>🖐</button>
+    <button class="tool-btn" class:active={selectMode} on:click={() => selectMode = true} title={$t.toolbar.select}>↖</button>
     <div class="sep" />
-    <button class="tool-btn" disabled={!canUndo} on:click={onUndo} title="Deshacer último cambio">
-      ↩ Deshacer
+    <button class="tool-btn" disabled={!canUndo} on:click={onUndo} title={$t.toolbar.undo}>
+      ↩ {$t.toolbar.undo.split(":")[0].split(" ")[0]}
     </button>
     <div class="sep" />
 
-    <button class="tool-btn" on:click={() => { drawMode = true; }} title="Modo lápiz: dibuja detrás de los bloques">
-      ✏️ Lápiz
+    <button class="tool-btn" on:click={() => { drawMode = true; }} title={$t.toolbar.drawMode}>
+      ✏️ {$t.toolbar.pencil}
     </button>
-    <button class="tool-btn" class:active={shapeMode} on:click={() => { shapeMode = true; }} title="Modo figuras: coloca figuras geométricas en el canvas">
-      ◻ Figuras
+    <button class="tool-btn" class:active={shapeMode} on:click={() => { shapeMode = true; shapeType = ""; }} title={$t.toolbar.shapeMode}>
+      ◻ {$t.toolbar.shape.replace(":", "")}
     </button>
-    <button bind:this={addBtnEl} class="tool-btn accent" on:click={toggleAddMenu}>+ Añadir ▾</button>
+    <button bind:this={addBtnEl} class="tool-btn accent" on:click={toggleAddMenu}>+ {$t.toolbar.add} ▾</button>
 
   {/if}
 
   <!-- Zoom controls — always visible -->
   <div class="zoom-group">
-    <button class="zoom-btn" on:click={() => setZoom(zoom - 0.1)} title="Alejar">−</button>
-    <button class="zoom-pct" on:click={resetZoom} title="Resetear zoom">{zoomPct}%</button>
-    <button class="zoom-btn" on:click={() => setZoom(zoom + 0.1)} title="Acercar">+</button>
+    <button class="zoom-btn" on:click={() => setZoom(zoom - 0.1)} title={$t.toolbar.zoomOut}>−</button>
+    <button class="zoom-pct" on:click={resetZoom} title={$t.toolbar.resetZoom}>{zoomPct}%</button>
+    <button class="zoom-btn" on:click={() => setZoom(zoom + 0.1)} title={$t.toolbar.zoomIn}>+</button>
   </div>
 </div>
 

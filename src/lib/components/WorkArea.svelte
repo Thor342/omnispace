@@ -5,6 +5,7 @@
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { listen } from "@tauri-apps/api/event";
   import { spaces, activeSpaceId, pagesMap, activePageId } from "../stores/spaces";
+  import { t } from "../stores/language";
   import SearchOverlay from "./SearchOverlay.svelte";
   import DeleteConfirmModal from "./DeleteConfirmModal.svelte";
   import { getPages, createPage, deletePage, updatePageTitle, reorderPages, exportPage, importPage, getBlocks } from "../api";
@@ -129,7 +130,7 @@
       const target = savedId ? pages.find(p => p.id === savedId) : null;
       activePageId.set(target?.id ?? pages[0].id);
     } else {
-      const page = await createPage(spaceId, "Página 1");
+      const page = await createPage(spaceId, `${$t.workArea.page} 1`);
       if ($activeSpaceId !== spaceId) return;
       pagesMap.update(m => ({ ...m, [spaceId]: [page] }));
       activePageId.set(page.id);
@@ -137,13 +138,25 @@
   }
 
   // ── Add page ──────────────────────────────────────────
-  async function addPage() {
+  async function addPage(afterIndex?: number) {
     if (!$activeSpaceId) return;
     const count = spacePages.length + 1;
-    const page = await createPage($activeSpaceId, `Página ${count}`);
-    pagesMap.update(m => ({ ...m, [$activeSpaceId!]: [...(m[$activeSpaceId!] ?? []), page] }));
+    const page = await createPage($activeSpaceId, `${$t.workArea.page} ${count}`);
+    pagesMap.update(m => {
+      const pages = [...(m[$activeSpaceId!] ?? []), page];
+      if (afterIndex !== undefined) {
+        // Mover la nueva página a la posición correcta (justo después de afterIndex)
+        const insertAt = afterIndex + 1;
+        pages.splice(insertAt, 0, pages.splice(pages.length - 1, 1)[0]);
+        reorderPages(pages.map(p => p.id)).catch(console.error);
+      }
+      return { ...m, [$activeSpaceId!]: pages };
+    });
     activePageId.set(page.id);
-    setTimeout(() => tabsEl?.scrollTo({ left: tabsEl.scrollWidth, behavior: "smooth" }), 50);
+    setTimeout(() => {
+      const newTab = tabsEl?.querySelector(`[data-page-id="${page.id}"]`) as HTMLElement | null;
+      newTab?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+    }, 50);
   }
 
   // ── Delete page with 5-second confirmation ────────────
@@ -153,8 +166,8 @@
   let deleteShake = false;
 
   function requestDeletePage(pageId: string) {
-    if (deleteConfirmId === pageId) {
-      // Ya está en proceso: shake para indicar que el usuario debe esperar
+    if (deleteConfirmId === pageId && deleteTargetPage) {
+      // Modal ya visible para esta página: shake para indicar que debe esperar
       deleteShake = false;
       requestAnimationFrame(() => { deleteShake = true; });
       return;
@@ -186,7 +199,7 @@
     await deletePage(pageId);
     let remaining = spacePages.filter(p => p.id !== pageId);
     if (remaining.length === 0) {
-      const newPage = await createPage(spaceId, "Página 1");
+      const newPage = await createPage(spaceId, `${$t.workArea.page} 1`);
       remaining = [newPage];
     }
     pagesMap.update(m => ({ ...m, [spaceId]: remaining }));
@@ -200,11 +213,11 @@
 
   async function commitEdit() {
     if (!editingPageId || !$activeSpaceId) { editingPageId = null; return; }
-    await updatePageTitle(editingPageId, editingTitle.trim() || "Página");
+    await updatePageTitle(editingPageId, editingTitle.trim() || $t.workArea.page);
     pagesMap.update(m => ({
       ...m,
       [$activeSpaceId!]: (m[$activeSpaceId!] ?? []).map(p =>
-        p.id === editingPageId ? { ...p, title: editingTitle.trim() || "Página" } : p
+        p.id === editingPageId ? { ...p, title: editingTitle.trim() || $t.workArea.page } : p
       )
     }));
     editingPageId = null;
@@ -216,7 +229,7 @@
     if (!activePage || !$activeSpaceId || exporting) return;
     const safe = activePage.title.replace(/[^a-zA-Z0-9 \-]/g, "_").trim();
     const destPath = await save({
-      title: "Guardar página como",
+      title: $t.workArea.savePageAs,
       defaultPath: `${safe}.omnipage.zip`,
       filters: [{ name: "OmniSpace Page", extensions: ["zip", "omnipage"] }],
     });
@@ -224,9 +237,9 @@
     exporting = true;
     try {
       await exportPage(activePage.id, destPath);
-      showToast("Página exportada correctamente");
+      showToast($t.workArea.exportedOk);
     } catch (e) {
-      showToast(`Error al exportar: ${e}`, "error");
+      showToast($t.workArea.exportError(e), "error");
     } finally {
       exporting = false;
     }
@@ -237,7 +250,7 @@
   async function handleImport() {
     if (!$activeSpaceId || importing) return;
     const filePath = await open({
-      title: "Importar página OmniSpace",
+      title: $t.workArea.importPageTitle,
       filters: [{ name: "OmniSpace Page", extensions: ["zip", "omnipage"] }],
       multiple: false,
       directory: false,
@@ -248,16 +261,28 @@
       const page = await importPage($activeSpaceId, filePath);
       pagesMap.update(m => ({ ...m, [$activeSpaceId!]: [...(m[$activeSpaceId!] ?? []), page] }));
       activePageId.set(page.id);
-      showToast(`Página "${page.title}" importada correctamente`);
+      showToast($t.workArea.importedOk(page.title));
       setTimeout(() => tabsEl?.scrollTo({ left: tabsEl.scrollWidth, behavior: "smooth" }), 50);
     } catch (e) {
-      showToast(`Error al importar: ${e}`, "error");
+      showToast($t.workArea.importError(e), "error");
     } finally {
       importing = false;
     }
   }
 
   $: deleteTargetPage = spacePages.find(p => p.id === deleteConfirmId);
+
+  // Palabras "Página" en todos los idiomas soportados
+  const PAGE_WORDS = ["Página", "Page", "Seite", "Pagina", "Nova página", "Nouvelle page"];
+  const DEFAULT_PAGE_RE = new RegExp(`^(${PAGE_WORDS.join("|")})\\s+(\\d+)$`, "i");
+
+  // Si el título es el nombre por defecto (ej. "Página 1"), lo muestra en el idioma actual.
+  // Si el usuario lo renombró, lo muestra tal cual.
+  function displayPageTitle(title: string): string {
+    const m = title.match(DEFAULT_PAGE_RE);
+    if (m) return `${$t.workArea.page} ${m[2]}`;
+    return title;
+  }
 
   // ── Miniaturas de páginas (hover preview) ─────────────
   interface PagePreview { pageId: string; blocks: { type: string; label: string }[]; x: number; y: number; }
@@ -268,11 +293,11 @@
   function blockLabel(b: { block_type: string; content: string }): string {
     try {
       const d = JSON.parse(b.content || "{}");
-      if (b.block_type === "note")  return d.title || d.text?.slice(0, 40) || "Nota";
-      if (b.block_type === "link")  return d.title || d.url || "Enlace";
-      if (b.block_type === "task")  return `${d.tasks?.length ?? 0} tareas`;
-      if (b.block_type === "file")  return d.name || "Documento";
-      if (b.block_type === "shape") return d.text || "Figura";
+      if (b.block_type === "note")  return d.title || d.text?.slice(0, 40) || $t.search.labelNote;
+      if (b.block_type === "link")  return d.title || d.url || $t.search.labelLink;
+      if (b.block_type === "task")  return `${d.tasks?.length ?? 0} ${$t.toolbar.tasks.toLowerCase()}`;
+      if (b.block_type === "file")  return d.name || $t.search.labelDoc;
+      if (b.block_type === "shape") return d.text || $t.toolbar.shape.replace(":", "");
     } catch {}
     return b.block_type.charAt(0).toUpperCase() + b.block_type.slice(1);
   }
@@ -495,7 +520,7 @@
 {#if preview}
   <div class="page-preview" style="left:{preview.x}px; top:{preview.y}px;">
     {#if preview.blocks.length === 0}
-      <p class="preview-empty">Página vacía</p>
+      <p class="preview-empty">{$t.workArea.pageEmpty}</p>
     {:else}
       {#each preview.blocks as b}
         <div class="preview-row">
@@ -523,7 +548,7 @@
   >
     <span class="ghost-icon">📄</span>
     <span class="ghost-title">{ghost.title}</span>
-    {#if ghost.nearThreshold}<span class="ghost-hint">↗ Soltar para nueva ventana</span>{/if}
+    {#if ghost.nearThreshold}<span class="ghost-hint">{$t.workArea.detachHint}</span>{/if}
   </div>
 {/if}
 
@@ -549,17 +574,16 @@
 <!-- ── Delete confirmation modal ──────────────────────── -->
 {#if deleteConfirmId && deleteTargetPage}
   <DeleteConfirmModal
-    title="¿Eliminar &quot;{deleteTargetPage.title}&quot;?"
+    title={$t.deleteModal.deletePage(deleteTargetPage.title)}
     countdown={deleteCountdown}
-    confirmLabel="Sí, eliminar página"
+    confirmLabel={$t.deleteModal.deletePageConfirm}
     shake={deleteShake}
     onConfirm={confirmDeletePage}
     onCancel={cancelDeletePage}
     on:shakeend={() => deleteShake = false}
   >
-    Esta acción eliminará <strong>permanentemente</strong> todos los bloques, notas,
-    imágenes, archivos, trazos y datos de esta página.<br/>
-    <strong>Esta acción no se puede deshacer.</strong>
+    {$t.deleteModal.deletePageWarning}<br/>
+    <strong>{$t.deleteModal.irreversible}</strong>
   </DeleteConfirmModal>
 {/if}
 
@@ -567,8 +591,13 @@
   {#if !activeSpace}
     <div class="empty-state">
       <span class="empty-icon">⬡</span>
-      <h2>Bienvenido a OmniSpace</h2>
-      <p>Selecciona o crea un espacio en el panel izquierdo.</p>
+      <h2>{$t.workArea.welcome}</h2>
+      <p>{$t.workArea.selectSpace}</p>
+      {#if $spaces.length === 0}
+        <button class="create-space-btn" on:click={() => window.dispatchEvent(new CustomEvent("omni:create-space"))}>
+          {$t.sidebar.newSpace}
+        </button>
+      {/if}
     </div>
   {:else}
     <!-- Top bar -->
@@ -591,12 +620,12 @@
             {#key $activePageId}
               <span
                 class="bread-page"
-                title="Doble clic para renombrar"
+                title={$t.workArea.renameTip}
                 role="button" tabindex="0"
                 on:dblclick|stopPropagation={startBreadEdit}
                 on:keydown={e => e.key === 'Enter' && startBreadEdit()}
                 in:fly={{ x: 14, duration: 220, delay: 30 }}
-              >{activePage.title}</span>
+              >{displayPageTitle(activePage.title)}</span>
             {/key}
           {/if}
         {/if}
@@ -604,7 +633,7 @@
 
       <!-- Page tabs with scroll -->
       <div class="tabs-wrap">
-        <button class="scroll-arrow" on:click={() => scrollTabs(-1)} title="Anterior">‹</button>
+        <button class="scroll-arrow" on:click={() => scrollTabs(-1)} title={$t.workArea.prev}>‹</button>
 
         <div
           class="page-tabs"
@@ -619,14 +648,14 @@
             <div class="drop-indicator" style="left:{dropIndicatorX}px;"></div>
           {/if}
 
-          {#each spacePages.filter(p => !detachedPageIds.has(p.id)) as page (page.id)}
+          {#each spacePages.filter(p => !detachedPageIds.has(p.id)) as page, i (page.id)}
+            <div class="tab-group" in:fly={{ y: -10, duration: 200 }}>
             <div
               class="page-tab"
               class:active={$activePageId === page.id}
               class:tab-reordering={reorderDragId === page.id}
               role="button" tabindex="0"
               data-page-id={page.id}
-              in:fly={{ y: -10, duration: 200 }}
               on:mousedown={e => onTabMouseDown(e, page.id, page.title)}
               on:mouseenter={e => showPreview(e, page.id)}
               on:mouseleave={hidePreview}
@@ -644,32 +673,37 @@
                   use:focusEl
                 />
               {:else}
-                <span class="tab-label">{page.title}</span>
+                <span class="tab-label">{displayPageTitle(page.title)}</span>
               {/if}
 
               <button
                 class="tab-del"
                 class:armed={deleteConfirmId === page.id}
                 on:click|stopPropagation={() => requestDeletePage(page.id)}
-                title="Eliminar página"
+                title={$t.workArea.deletePage}
               >×</button>
+            </div>
+            <button
+              class="tab-add-after"
+              on:click|stopPropagation={() => addPage(i)}
+              title={$t.workArea.newPage}
+            >+</button>
             </div>
           {/each}
         </div>
 
-        <button class="scroll-arrow" on:click={() => scrollTabs(1)} title="Siguiente">›</button>
-        <button class="add-tab" on:click={addPage} title="Nueva página">+</button>
+        <button class="scroll-arrow" on:click={() => scrollTabs(1)} title={$t.workArea.next}>›</button>
       </div>
 
       <!-- Export / Import -->
       <div class="page-actions">
         <button class="action-btn" on:click={handleExport} disabled={!activePage || exporting}
-          title="Descargar/compartir esta página como carpeta">
-          {exporting ? "⏳" : "⬇"} Exportar
+          title={$t.workArea.exportTitle}>
+          {exporting ? "⏳" : "⬇"} {$t.workArea.export}
         </button>
         <button class="action-btn" on:click={handleImport} disabled={!$activeSpaceId || importing}
-          title="Importar una página compartida (carpeta _omnipage)">
-          {importing ? "⏳" : "⬆"} Importar
+          title={$t.workArea.importTitle}>
+          {importing ? "⏳" : "⬆"} {$t.workArea.importing}
         </button>
       </div>
     </header>
@@ -697,6 +731,15 @@
   .empty-icon { font-size: 56px; }
   .empty-state h2 { color: var(--text-primary); font-size: 22px; font-weight: 600; }
   .empty-state p  { font-size: 14px; }
+  .create-space-btn {
+    margin-top: 8px;
+    padding: 10px 28px;
+    background: var(--accent); color: #fff;
+    border-radius: var(--radius-md);
+    font-size: 14px; font-weight: 600;
+    transition: opacity var(--transition);
+  }
+  .create-space-btn:hover { opacity: 0.88; }
 
   /* ── Toast ── */
   .toast {
@@ -863,15 +906,30 @@
   .tab-del:hover { opacity: 1 !important; color: var(--red); background: rgba(239,68,68,0.18); }
   .tab-del.armed { opacity: 1 !important; color: var(--red); }
 
-  .add-tab {
-    flex-shrink: 0; padding: 0 12px; font-size: 18px;
-    color: var(--text-muted);
-    transition: color var(--transition), background var(--transition);
-    align-self: stretch; display: flex; align-items: center;
-    border-left: 1px solid var(--border);
-    outline: none;
+  .tab-group {
+    display: flex; align-items: flex-end; flex-shrink: 0;
   }
-  .add-tab:hover { color: var(--accent); background: var(--accent-dim); }
+  .tab-add-after {
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    font-size: 13px; line-height: 1;
+    color: var(--text-muted);
+    background: var(--bg-overlay);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0;
+    transition: opacity var(--transition), color var(--transition), background var(--transition);
+    align-self: center;
+    margin-left: 3px;
+    outline: none;
+    pointer-events: none;
+  }
+  .tab-group:hover .tab-add-after {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .tab-add-after:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
 
   /* ── Export / Import ── */
   .page-actions {

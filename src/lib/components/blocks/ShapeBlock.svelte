@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import { t } from "../../stores/language";
 
   export let content: string;
   export let onContentChange: (c: string) => void = () => {};
@@ -78,7 +79,7 @@
     <div class="tb-sep" />
 
     <div class="color-group">
-      <span class="tb-lbl">Relleno</span>
+      <span class="tb-lbl">{$t.shapeBlock.fill}</span>
       <div class="swatches">
         {#each FILL_COLORS as c}
           <button
@@ -95,7 +96,7 @@
     <div class="tb-sep" />
 
     <div class="color-group">
-      <span class="tb-lbl">Borde</span>
+      <span class="tb-lbl">{$t.shapeBlock.stroke}</span>
       <div class="swatches">
         {#each STROKE_COLORS as c}
           <button
@@ -140,7 +141,7 @@
           on:blur={commitText}
           on:input={save}
           on:keydown={e => { if (e.key === "Escape") commitText(); }}
-          placeholder="Escribe aquí…"
+          placeholder={$t.shapeBlock.textPlaceholder}
           class="text-editor"
         />
       </div>
@@ -149,7 +150,7 @@
         <span class="text-display">{data.text}</span>
       </div>
     {:else}
-      <div class="text-hint">doble clic para escribir</div>
+      <div class="text-hint">{$t.shapeBlock.hint}</div>
     {/if}
   </div>
 </div>

@@ -1,10 +1,12 @@
 import type { StrokePath } from "../../types";
 
-export const CW = 3200;
-export const CH = 2400;
+export const CW = 4000;
+export const CH = 3000;
 
 export function renderStroke(c: CanvasRenderingContext2D, s: StrokePath) {
   if (s.points.length < 2) return;
+  c.save();
+  c.globalAlpha = (s.opacity ?? 100) / 100;
   c.beginPath();
   c.strokeStyle = s.color;
   c.lineWidth = s.width;
@@ -17,6 +19,7 @@ export function renderStroke(c: CanvasRenderingContext2D, s: StrokePath) {
   }
   c.lineTo(s.points.at(-1)![0], s.points.at(-1)![1]);
   c.stroke();
+  c.restore();
 }
 
 export function redrawAll(
@@ -25,10 +28,14 @@ export function redrawAll(
   strokes: StrokePath[]
 ) {
   if (ctx) {
+    const scale = ctx.canvas.width / CW;
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
     ctx.clearRect(0, 0, CW, CH);
     for (const s of strokes) if ((s.layer ?? "base") === "base") renderStroke(ctx, s);
   }
   if (markerCtx) {
+    const scale = markerCtx.canvas.width / CW;
+    markerCtx.setTransform(scale, 0, 0, scale, 0, 0);
     markerCtx.clearRect(0, 0, CW, CH);
     for (const s of strokes) if (s.layer === "top") renderStroke(markerCtx, s);
   }

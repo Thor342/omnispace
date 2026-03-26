@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Block } from "../../types";
+  import { t } from "../../stores/language";
   import NoteBlock     from "./NoteBlock.svelte";
   import LinkBlock     from "./LinkBlock.svelte";
   import FileBlock     from "./FileBlock.svelte";
@@ -13,10 +14,12 @@
   export let zoom: number = 1;
   export let selected: boolean = false;
   export let onUpdate: (id: string, changes: Partial<Block>) => void;
+  export let onMove: ((id: string, x: number, y: number) => void) | undefined = undefined;
   export let onDelete: (id: string) => void;
   export let onBringToFront: (id: string) => void;
   export let onSelect: (id: string) => void = () => {};
   export let multiSelected: boolean = false;
+  export let connectorMode: boolean = false;
 
   // ── File subtype (for audio/etc transparent styling) ──
   $: fileSubtype = block.block_type === "file"
@@ -77,7 +80,7 @@
   let dragSX = 0, dragSY = 0, dragBX = 0, dragBY = 0;
 
   function onHeaderPointerDown(e: PointerEvent) {
-    if (drawMode || editingLabel) return;
+    if (drawMode || editingLabel || connectorMode) return;
     e.preventDefault();
     dragging = true;
     dragSX = e.clientX; dragSY = e.clientY;
@@ -91,6 +94,7 @@
     if (!dragging) return;
     lx = Math.max(0, dragBX + (e.clientX - dragSX) / zoom);
     ly = Math.max(0, dragBY + (e.clientY - dragSY) / zoom);
+    onMove?.(block.id, lx, ly);
   }
 
   function onDragEnd() {
@@ -141,11 +145,11 @@
     onUpdate(block.id, { content: newContent });
   }
 
-  const ICONS: Record<string, string>  = { note:"📝", link:"🔗", file:"📎", task:"✅", calendar:"📅", clock:"🕐", shape:"◻" };
-  const LABELS: Record<string, string> = { note:"Nota", link:"Enlace", file:"Archivo", task:"Tareas", calendar:"Calendario", clock:"Reloj", shape:"Figura" };
+  const ICONS: Record<string, string> = { note:"📝", link:"🔗", file:"📎", task:"✅", calendar:"📅", clock:"🕐", shape:"◻" };
+  $: LABELS = { note: $t.blockHeader.note, link: $t.blockHeader.link, file: $t.blockHeader.file, task: $t.blockHeader.task, calendar: $t.blockHeader.calendar, clock: $t.blockHeader.clock, shape: $t.blockHeader.shape };
   $: blockIcon  = ICONS[block.block_type]  ?? "📦";
   $: blockLabel = block.block_type === "file"
-    ? (() => { try { return JSON.parse(localContent || "{}").name || "Archivo"; } catch { return "Archivo"; } })()
+    ? (() => { try { return JSON.parse(localContent || "{}").name || $t.blockHeader.file; } catch { return $t.blockHeader.file; } })()
     : (LABELS[block.block_type] ?? block.block_type);
 
   $: displayH = minimized ? 36 : (lh < 36 ? 36 : lh);
@@ -157,7 +161,7 @@
 {#if expanded}
   <div use:portal class="expand-backdrop"
     role="button" tabindex="0"
-    aria-label="Cerrar"
+    aria-label={$t.blockHeader.close}
     on:click={e => { if (e.target === e.currentTarget) expanded = false; }}
     on:keydown={e => e.key === 'Escape' && (expanded = false)}
   >
@@ -165,7 +169,7 @@
       <div class="expand-header">
         <span class="block-icon">{blockIcon}</span>
         <span class="expand-title">{displayLabel}</span>
-        <button class="expand-close" on:click={() => expanded = false} title="Cerrar">×</button>
+        <button class="expand-close" on:click={() => expanded = false} title={$t.blockHeader.close}>×</button>
       </div>
       <div class="expand-body">
         {#if block.block_type === "file"}
@@ -199,7 +203,7 @@
   data-type={block.block_type}
   data-subtype={fileSubtype}
   style="transform:translate({lx}px,{ly}px); width:{lw}px; height:{displayH}px; z-index:{block.z_index}; opacity:{minimized ? 0.65 : 1}"
-  on:pointerdown={() => { if (!drawMode) { onSelect(block.id); onBringToFront(block.id); } }}
+  on:pointerdown={() => { if (!drawMode && !connectorMode) { onSelect(block.id); onBringToFront(block.id); } }}
 >
   <!-- Header -->
   <div class="block-header" on:pointerdown={onHeaderPointerDown} role="toolbar" aria-label="mover bloque">
@@ -219,7 +223,7 @@
     {:else}
       <span
         class="block-label"
-        title="Doble clic para renombrar"
+        title={$t.blockHeader.rename}
         role="button"
         tabindex="0"
         on:dblclick={startEditLabel}
@@ -228,13 +232,13 @@
     {/if}
 
     <!-- Expand button (always visible, all block types) -->
-    <button class="hdr-btn expand-btn" on:pointerdown|stopPropagation on:click|stopPropagation={() => expanded = true} title="Expandir">⛶</button>
+    <button class="hdr-btn expand-btn" on:pointerdown|stopPropagation on:click|stopPropagation={() => expanded = true} title={$t.blockHeader.expand}>⛶</button>
 
-    <button class="hdr-btn" on:pointerdown|stopPropagation on:click|stopPropagation={toggleMinimize} title={minimized ? "Restaurar" : "Minimizar"}>
+    <button class="hdr-btn" on:pointerdown|stopPropagation on:click|stopPropagation={toggleMinimize} title={minimized ? $t.blockHeader.restore : $t.blockHeader.minimize}>
       {minimized ? "□" : "—"}
     </button>
 
-    <button class="hdr-btn close" on:pointerdown|stopPropagation on:click|stopPropagation={requestDelete} title="Eliminar">×</button>
+    <button class="hdr-btn close" on:pointerdown|stopPropagation on:click|stopPropagation={requestDelete} title={$t.blockHeader.delete}>×</button>
   </div>
 
   <!-- Content -->

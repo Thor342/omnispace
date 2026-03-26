@@ -4,6 +4,7 @@
   import WorkArea from "./lib/components/WorkArea.svelte";
   import DetachedView from "./lib/components/DetachedView.svelte";
   import Updater from "./lib/components/Updater.svelte";
+  import TutorialModal from "./lib/components/TutorialModal.svelte";
   import { spaces, activeSpaceId } from "./lib/stores/spaces";
   import { getSpaces } from "./lib/api";
   import "./lib/stores/theme";
@@ -30,6 +31,7 @@
   <DetachedView pageId={detachedPage} spaceId={detachedSpace} />
 {:else}
   <Updater />
+  <TutorialModal />
   <div class="app-layout">
 
     <!-- WorkArea ocupa toda la pantalla -->

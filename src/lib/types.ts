@@ -44,7 +44,7 @@ export interface Block {
 }
 
 // ─── Block content shapes ────────────────────────────────
-export interface NoteContent   { title: string; text: string; }
+export interface NoteContent   { title: string; text?: string; html?: string; }
 export type LinkType = "youtube" | "canva" | "figma" | "gslides" | "gdocs" | "miro" | "loom" | "general";
 export interface LinkContent {
   url: string;
@@ -68,6 +68,7 @@ export interface StrokePath {
   width: number;
   points: [number, number][];
   layer?: "base" | "top"; // "base" = lápiz (detrás de bloques), "top" = marcador (encima de todo)
+  opacity?: number; // 1-100, 100 = opaco, menor = más transparente
 }
 
 // ─── Notes ───────────────────────────────────────────────
