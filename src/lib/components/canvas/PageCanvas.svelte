@@ -242,10 +242,12 @@
     const overCanvas = viewportEl.contains(e.target as Node);
     if (!e.ctrlKey && !overCanvas) return; // non-pinch outside viewport: ignore
 
-    // Si el cursor está sobre un elemento scrollable interno (ej. lista de tareas),
-    // dejar que el scroll ocurra naturalmente en ese elemento.
+    // Si el cursor está sobre un elemento scrollable interno, dejar que el scroll
+    // ocurra naturalmente en ese elemento (notas, tareas, documentos, etc).
     if (!e.ctrlKey) {
-      const scrollable = (e.target as Element).closest?.('.task-list');
+      const scrollable = (e.target as Element).closest?.(
+        '.note-editor, .task-list, .word-view, .word-editor, .excel-scroll, .ap-seek-row'
+      );
       if (scrollable && scrollable.scrollHeight > scrollable.clientHeight) return;
     }
 

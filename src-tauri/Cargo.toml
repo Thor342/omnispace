@@ -1,6 +1,6 @@
 [package]
 name = "omnispace"
-version = "1.0.3"
+version = "1.0.4"
 description = "OmniSpace - Personal Project Organizer"
 authors = ["OmniSpace"]
 edition = "2021"

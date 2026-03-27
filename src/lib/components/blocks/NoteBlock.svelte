@@ -42,12 +42,15 @@
     editorEl.innerHTML = np.html;
   }
 
+  function flush() {
+    clearTimeout(timer);
+    const html = DOMPurify.sanitize(editorEl.innerHTML);
+    onContentChange(JSON.stringify({ title: noteTitle, html }));
+  }
+
   function schedule() {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      const html = DOMPurify.sanitize(editorEl.innerHTML);
-      onContentChange(JSON.stringify({ title: noteTitle, html }));
-    }, 800);
+    timer = setTimeout(flush, 800);
   }
 
   // ── Formateo ──────────────────────────────────────────────
@@ -107,7 +110,7 @@
     on:input={schedule}
     on:keydown={onEditorKeydown}
     on:focus={() => editorFocused = true}
-    on:blur={() => editorFocused = false}
+    on:blur={() => { flush(); editorFocused = false; }}
     spellcheck="false"
     role="textbox"
     aria-multiline="true"
