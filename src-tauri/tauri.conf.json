@@ -33,6 +33,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "publisher": "OmniSpace",
     "copyright": "Copyright © 2026 OmniSpace. Todos los derechos reservados.",
