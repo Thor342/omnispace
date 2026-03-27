@@ -31,3 +31,4 @@ desktop.ini
 
 # Tauri build artifacts
 src-tauri/WixTools/
+*.key
